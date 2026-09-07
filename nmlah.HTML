@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>تقرير نملة - 192.168.1.0/24</title>
+
+  <style>
+    :root {
+      --bg: #0d0d0d;
+      --panel: #171512;
+      --ant-orange: #ff8c00;
+      --ant-orange-dim: #b35f00;
+      --text: #eee8dc;
+      --text-dim: #9a9184;
+      --border: #2a251f;
+      --up: #6fcf6f;
+      --down: #666;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+      margin: 0;
+      padding: 0 0 60px 0;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1a1611, #0d0d0d);
+      border-bottom: 2px solid var(--ant-orange);
+      padding: 28px 32px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+
+    header .icon {
+      font-size: 42px;
+    }
+
+    header h1 {
+      margin: 0;
+      color: var(--ant-orange);
+      font-size: 26px;
+    }
+
+    header p {
+      margin: 4px 0 0;
+      color: var(--text-dim);
+      font-size: 13px;
+    }
+
+    .summary {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      padding: 20px 32px 0;
+    }
+
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 20px;
+      min-width: 140px;
+    }
+
+    .stat .num {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--ant-orange);
+    }
+
+    .stat .label {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    .container {
+      padding: 24px 32px;
+    }
+
+    .host-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 18px;
+      overflow: hidden;
+    }
+
+    .host-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 20px;
+      background: #1c1812;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .host-ip {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-inline-start: 8px;
+    }
+
+    .badge.up {
+      background: rgba(111,207,111,0.15);
+      color: var(--up);
+      border: 1px solid var(--up);
+    }
+
+    .badge.os {
+      background: rgba(255,140,0,0.12);
+      color: var(--ant-orange);
+      border: 1px solid var(--ant-orange-dim);
+    }
+
+    .host-meta {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      text-align: right;
+      padding: 10px 20px;
+      font-size: 13px;
+    }
+
+    th {
+      color: var(--text-dim);
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      border-bottom: 1px solid var(--border);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .port {
+      color: var(--ant-orange);
+      font-weight: 700;
+      font-family: monospace;
+    }
+
+    .service {
+      color: var(--text);
+    }
+
+    .banner {
+      color: var(--text-dim);
+      font-family: monospace;
+      font-size: 11px;
+    }
+
+    .no-ports {
+      padding: 16px 20px;
+      color: var(--text-dim);
+      font-size: 13px;
+    }
+
+    footer {
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 12px;
+      padding: 30px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <div class="icon">🐜</div>
+
+    <div>
+      <h1>تقرير نملة — Nemla Recon Report</h1>
+
+      <p>
+        الهدف: 192.168.1.0/24
+        &nbsp;|&nbsp;
+        تاريخ الفحص: 2026-09-07 07:08:26
+        &nbsp;|&nbsp;
+        المدة: 12.4s
+      </p>
+    </div>
+  </header>
+
+  <div class="summary">
+
+    <div class="stat">
+      <div class="num">3</div>
+      <div class="label">أجهزة مكتشفة</div>
+    </div>
+
+    <div class="stat">
+      <div class="num">4</div>
+      <div class="label">منافذ مفتوحة</div>
+    </div>
+
+    <div class="stat">
+      <div class="num">40</div>
+      <div class="label">منفذ تم فحصه لكل جهاز</div>
+    </div>
+
+  </div>
+
+  <div class="container">
+
+    <!-- الجهاز الأول -->
+    <div class="host-card">
+
+      <div class="host-header">
+
+        <div>
+          <span class="host-ip">192.168.1.1</span>
+
+          <span class="badge up">Active</span>
+
+          <span class="badge os">
+            Linux / Unix (SSH مكتشف) (TTL=64)
+          </span>
+        </div>
+
+        <div class="host-meta">
+          MAC: AA:BB:CC:DD:EE:FF
+        </div>
+
+      </div>
+
+      <table>
+
+        <tr>
+          <th>المنفذ</th>
+          <th>الخدمة</th>
+          <th>Banner</th>
+        </tr>
+
+        <tr>
+          <td class="port">22</td>
+          <td class="service">SSH</td>
+          <td class="banner">SSH-2.0-OpenSSH_8.9</td>
+        </tr>
+
+        <tr>
+          <td class="port">80</td>
+          <td class="service">HTTP</td>
+          <td class="banner">-</td>
+        </tr>
+
+      </table>
+
+    </div>
+
+
+    <!-- الجهاز الثاني -->
+    <div class="host-card">
+
+      <div class="host-header">
+
+        <div>
+          <span class="host-ip">192.168.1.20</span>
+
+          <span class="badge up">Active</span>
+
+          <span class="badge os">
+            Windows (RDP/SMB مكتشفة) (TTL=128)
+          </span>
+        </div>
+
+        <div class="host-meta"></div>
+
+      </div>
+
+      <table>
+
+        <tr>
+          <th>المنفذ</th>
+          <th>الخدمة</th>
+          <th>Banner</th>
+        </tr>
+
+        <tr>
+          <td class="port">445</td>
+          <td class="service">SMB</td>
+          <td class="banner">-</td>
+        </tr>
+
+        <tr>
+          <td class="port">3389</td>
+          <td class="service">RDP</td>
+          <td class="banner">-</td>
+        </tr>
+
+      </table>
+
+    </div>
+
+
+    <!-- الجهاز الثالث -->
+    <div class="host-card">
+
+      <div class="host-header">
+
+        <div>
+          <span class="host-ip">192.168.1.30</span>
+
+          <span class="badge up">Active</span>
+
+          <span class="badge os">
+            غير معروف
+          </span>
+        </div>
+
+        <div class="host-meta"></div>
+
+      </div>
+
+      <div class="no-ports">
+        لا توجد منافذ مفتوحة ضمن النطاق المفحوص
+      </div>
+
+    </div>
+
+  </div>
+
+  <footer>
+    🐜 تم توليده بواسطة نملة (Nemla) v1.0
+    — استخدام مسؤول فقط على شبكات مصرح بفحصها
+  </footer>
+
+</body>
+</html>
