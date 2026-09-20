@@ -23,6 +23,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import guard as guard_mod
+from . import history as history_mod
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 MAX_BODY = 64 * 1024
@@ -213,12 +214,28 @@ class App:
             hosts, meta = engine.run_scan(job.target, ips, ports, emit=job.emit,
                                           cancel=job.cancel, **options)
             job.hosts, job.meta = hosts, meta
-            job.emit({"type": "done", "meta": meta, "hosts": hosts})
+            done = {"type": "done", "meta": meta, "hosts": hosts}
+            if not meta["cancelled"] and meta["discovered"]:
+                self._remember(job, done)
+            job.emit(done)
         except Exception as exc:  # noqa: BLE001 - report anything to the page
             job.emit({"type": "error", "msg": f"{type(exc).__name__}: {exc}"})
         finally:
             engine._LOG_SINK = None
             job.close()
+
+    def _remember(self, job: Job, done: dict) -> None:
+        """Save a finished scan and, if this target was scanned before, say what changed."""
+        try:
+            done["scan_id"] = history_mod.save(self.data_dir, self.engine, job.meta, job.hosts)
+            before = history_mod.previous_for(self.data_dir, job.target, done["scan_id"])
+            old = history_mod.load(self.data_dir, before) if before else None
+            if old:
+                diff = self.engine.diff_scans(old["hosts"], job.hosts)
+                diff["against"] = {"id": before, "scan_time": old.get("scan_time", "")}
+                done["diff"] = diff
+        except (OSError, KeyError, TypeError, ValueError):
+            pass  # history is a bonus: a full disk must never lose the scan itself
 
     # -- guard mode ---------------------------------------------------------
 
@@ -372,6 +389,9 @@ def make_handler(app: App):
                 ("GET", "report"): lambda: self._api_report(query),
                 ("POST", "hb"): lambda: self._json(200, {"ok": True}),
                 ("POST", "bye"): self._api_bye,
+                ("GET", "history"): lambda: self._json(
+                    200, {"scans": history_mod.list_scans(app.data_dir)}),
+                ("GET", "history/diff"): lambda: self._api_history_diff(query),
                 ("POST", "guard/start"): self._api_guard_start,
                 ("POST", "guard/stop"): lambda: self._json(200, app.stop_guard()),
                 ("GET", "guard/status"): lambda: self._json(
@@ -421,6 +441,15 @@ def make_handler(app: App):
         def _api_bye(self):
             app.bye_at = time.time()
             self._json(200, {"ok": True})
+
+        def _api_history_diff(self, query):
+            old = history_mod.load(app.data_dir, (query.get("a") or [""])[0])
+            new = history_mod.load(app.data_dir, (query.get("b") or [""])[0])
+            if old is None or new is None:
+                return self._json(404, {"error": "no such scan"})
+            diff = app.engine.diff_scans(old["hosts"], new["hosts"])
+            diff["against"] = {"id": (query.get("a") or [""])[0], "scan_time": old.get("scan_time", "")}
+            self._json(200, diff)
 
         def _api_guard_start(self):
             try:

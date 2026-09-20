@@ -158,6 +158,22 @@ STRINGS = {
         "g_no_network": "No local network found: only the decoy ports are watched.",
         "g_stopped": "Guard stopped.",
         "g_block_hint": "To block it on this computer: {command}",
+        "d_none": "No changes since the previous scan.",
+        "d_summary": "Changes: {new_hosts} new host(s), {gone_hosts} gone, {opened_ports} port(s) opened, {closed_ports} closed, {new_findings} new finding(s).",
+        "d_new_host": "New host: {ip}",
+        "d_gone_host": "Host gone: {ip}",
+        "d_opened": "{ip}: port {port} opened",
+        "d_closed": "{ip}: port {port} closed",
+        "d_service": "{ip}: port {port} changed from {old} to {new}",
+        "d_os": "{ip}: system guess changed from {old} to {new}",
+        "d_new_finding": "{ip}: new finding [{sev}] {text}",
+        "d_resolved": "{ip}: resolved [{sev}] {text}",
+        "d_compare_head": "Comparing {old} with {new}",
+        "d_bad_file": "Cannot read {path}: {err}",
+        "w_started": "Watching {target} every {every}. Press Ctrl+C to stop.",
+        "w_first": "First scan saved. Changes will be reported from the next one.",
+        "w_stopped": "Watch stopped.",
+        "w_bad_interval": "Bad interval '{value}': use for example 90s, 15m or 2h (at least 10 seconds).",
     },
     "ar": {
         "notice": "استخدمها فقط على شبكات تملكها أو لديك تصريح صريح لفحصها.",
@@ -235,6 +251,22 @@ STRINGS = {
         "g_no_network": "لم يتم العثور على شبكة محلية: تتم مراقبة منافذ الطُّعم فقط.",
         "g_stopped": "توقف وضع الحراسة.",
         "g_block_hint": "لحظره على هذا الجهاز: {command}",
+        "d_none": "لا تغييرات منذ الفحص السابق.",
+        "d_summary": "التغييرات: {new_hosts} جهاز جديد، {gone_hosts} اختفى، {opened_ports} منفذ فُتح، {closed_ports} أُغلق، {new_findings} ملاحظة جديدة.",
+        "d_new_host": "جهاز جديد: {ip}",
+        "d_gone_host": "اختفى الجهاز: {ip}",
+        "d_opened": "{ip}: فُتح المنفذ {port}",
+        "d_closed": "{ip}: أُغلق المنفذ {port}",
+        "d_service": "{ip}: المنفذ {port} تغيّر من {old} إلى {new}",
+        "d_os": "{ip}: تغيّر تخمين النظام من {old} إلى {new}",
+        "d_new_finding": "{ip}: ملاحظة جديدة [{sev}] {text}",
+        "d_resolved": "{ip}: تمت معالجتها [{sev}] {text}",
+        "d_compare_head": "مقارنة {old} مع {new}",
+        "d_bad_file": "تعذّرت قراءة {path}: {err}",
+        "w_started": "مراقبة {target} كل {every}. اضغط Ctrl+C للإيقاف.",
+        "w_first": "تم حفظ أول فحص. سيتم الإبلاغ عن التغييرات من الفحص التالي.",
+        "w_stopped": "توقفت المراقبة.",
+        "w_bad_interval": "فاصل زمني غير صالح '{value}': استخدم مثلاً 90s أو 15m أو 2h (10 ثوانٍ على الأقل).",
     },
     "he": {
         "notice": "השתמשו רק ברשתות שבבעלותכם או שיש לכם אישור לבדוק.",
@@ -312,6 +344,22 @@ STRINGS = {
         "g_no_network": "לא נמצאה רשת מקומית: רק פורטי הפיתיון מנוטרים.",
         "g_stopped": "מצב שמירה נעצר.",
         "g_block_hint": "כדי לחסום אותו במחשב הזה: {command}",
+        "d_none": "אין שינויים מאז הסריקה הקודמת.",
+        "d_summary": "שינויים: {new_hosts} מכשירים חדשים, {gone_hosts} נעלמו, {opened_ports} פורטים נפתחו, {closed_ports} נסגרו, {new_findings} ממצאים חדשים.",
+        "d_new_host": "מכשיר חדש: {ip}",
+        "d_gone_host": "המכשיר נעלם: {ip}",
+        "d_opened": "{ip}: פורט {port} נפתח",
+        "d_closed": "{ip}: פורט {port} נסגר",
+        "d_service": "{ip}: פורט {port} השתנה מ-{old} ל-{new}",
+        "d_os": "{ip}: ניחוש המערכת השתנה מ-{old} ל-{new}",
+        "d_new_finding": "{ip}: ממצא חדש [{sev}] {text}",
+        "d_resolved": "{ip}: טופל [{sev}] {text}",
+        "d_compare_head": "משווה את {old} עם {new}",
+        "d_bad_file": "לא ניתן לקרוא את {path}: {err}",
+        "w_started": "מנטר את {target} כל {every}. לחצו Ctrl+C כדי לעצור.",
+        "w_first": "הסריקה הראשונה נשמרה. שינויים ידווחו החל מהסריקה הבאה.",
+        "w_stopped": "הניטור נעצר.",
+        "w_bad_interval": "מרווח לא תקין '{value}': השתמשו למשל ב-90s, 15m או 2h (לפחות 10 שניות).",
     },
 }
 
@@ -1103,6 +1151,95 @@ def summarize_findings(hosts: list) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# What changed between two scans
+# ---------------------------------------------------------------------------
+
+def _ip_key(ip: str) -> int:
+    return int(ipaddress.ip_address(ip))
+
+
+def _product_label(port: dict) -> str:
+    return " ".join(x for x in (port.get("product"), port.get("version")) if x)
+
+
+def _os_core(text) -> str:
+    return re.sub(r"\s*\(TTL=\d+\)", "", text or "").strip()
+
+
+def _finding_keys(host: dict) -> dict:
+    """{(id, port): finding} for the findings that matter (everything above 'info')."""
+    return {(f["id"], f.get("port")): f for f in host.get("findings", []) if f["severity"] != "info"}
+
+
+def diff_scans(old_hosts: list, new_hosts: list) -> dict:
+    """Compare two scans of the same target: new and vanished hosts, ports that
+    opened or closed, services whose product or version changed, a different
+    system guess, and findings that appeared or were resolved."""
+    old = {h["ip"]: h for h in old_hosts}
+    new = {h["ip"]: h for h in new_hosts}
+    unknown = {STRINGS[lang][key] for lang in STRINGS for key in ("os_unknown", "os_skipped")}
+    out = {"new_hosts": sorted(new.keys() - old.keys(), key=_ip_key),
+           "gone_hosts": sorted(old.keys() - new.keys(), key=_ip_key), "hosts": {}}
+    new_findings = sum(len(_finding_keys(new[ip])) for ip in out["new_hosts"])
+    opened = closed = changed = resolved = 0
+    for ip in sorted(old.keys() & new.keys(), key=_ip_key):
+        o, n = old[ip], new[ip]
+        op = {p["port"]: p for p in o.get("open_ports", [])}
+        np_ = {p["port"]: p for p in n.get("open_ports", [])}
+        entry = {
+            "opened": sorted(np_.keys() - op.keys()),
+            "closed": sorted(op.keys() - np_.keys()),
+            "changed": [{"port": p, "from": _product_label(op[p]), "to": _product_label(np_[p])}
+                        for p in sorted(op.keys() & np_.keys())
+                        if op[p].get("product") and np_[p].get("product")
+                        and _product_label(op[p]) != _product_label(np_[p])],
+            "os": None,
+        }
+        old_os, new_os = _os_core(o.get("os_guess")), _os_core(n.get("os_guess"))
+        if old_os and new_os and old_os != new_os and old_os not in unknown and new_os not in unknown:
+            entry["os"] = {"from": old_os, "to": new_os}
+        ok, nk = _finding_keys(o), _finding_keys(n)
+        order = lambda key: (key[1] or 0, key[0])  # noqa: E731
+        entry["new_findings"] = [nk[k] for k in sorted(nk.keys() - ok.keys(), key=order)]
+        entry["resolved_findings"] = [ok[k] for k in sorted(ok.keys() - nk.keys(), key=order)]
+        if any(entry.values()):
+            out["hosts"][ip] = entry
+            opened += len(entry["opened"])
+            closed += len(entry["closed"])
+            changed += len(entry["changed"])
+            new_findings += len(entry["new_findings"])
+            resolved += len(entry["resolved_findings"])
+    out["summary"] = {
+        "new_hosts": len(out["new_hosts"]), "gone_hosts": len(out["gone_hosts"]),
+        "opened_ports": opened, "closed_ports": closed, "changed_services": changed,
+        "new_findings": new_findings, "resolved_findings": resolved,
+    }
+    # "worse" means something appeared: a host, an open port or a finding
+    out["summary"]["worse"] = bool(out["summary"]["new_hosts"] or opened or new_findings)
+    out["summary"]["changed"] = bool(out["new_hosts"] or out["gone_hosts"] or out["hosts"])
+    return out
+
+
+def diff_lines(diff: dict) -> list:
+    """The changes as sentences in the active language."""
+    if not diff["summary"]["changed"]:
+        return [t("d_none")]
+    lines = [t("d_summary", **{k: diff["summary"][k] for k in (
+        "new_hosts", "gone_hosts", "opened_ports", "closed_ports", "new_findings")})]
+    lines += [t("d_new_host", ip=ip) for ip in diff["new_hosts"]]
+    lines += [t("d_gone_host", ip=ip) for ip in diff["gone_hosts"]]
+    for ip, e in diff["hosts"].items():
+        lines += [t("d_opened", ip=ip, port=p) for p in e["opened"]]
+        lines += [t("d_closed", ip=ip, port=p) for p in e["closed"]]
+        lines += [t("d_service", ip=ip, port=c["port"], old=c["from"], new=c["to"]) for c in e["changed"]]
+        if e["os"]:
+            lines.append(t("d_os", ip=ip, old=e["os"]["from"], new=e["os"]["to"]))
+        for kind, key in (("new_findings", "d_new_finding"), ("resolved_findings", "d_resolved")):
+            lines += [t(key, ip=ip, sev=t("sev_" + f["severity"]), text=finding_text(f)) for f in e[kind]]
+    return lines
+
+
+# ---------------------------------------------------------------------------
 # The scan pipeline (shared by the command line and the 3D interface)
 # ---------------------------------------------------------------------------
 
@@ -1482,6 +1619,17 @@ def build_parser() -> argparse.ArgumentParser:
                    help="interface and report language (default en)")
     p.add_argument("--version", action="version", version=f"nemla {__version__}")
 
+    watch = p.add_argument_group("watching for changes")
+    watch.add_argument("--watch", metavar="INTERVAL",
+                       help="repeat the scan every INTERVAL (90s, 15m, 2h) and say what changed "
+                            "each time; stop with Ctrl+C")
+    watch.add_argument("--watch-log", metavar="FILE",
+                       help="append every change found by --watch to this JSON-lines file")
+    watch.add_argument("--diff", nargs=2, metavar=("OLD.json", "NEW.json"),
+                       help="compare two scans saved with --json and print what changed")
+    watch.add_argument("--fail-on-change", action="store_true",
+                       help="with --diff: exit with code 3 if a host, an open port or a finding appeared")
+
     guard = p.add_argument_group("guard mode (defensive)")
     guard.add_argument("--guard", action="store_true",
                        help="watch this network for suspicious activity (decoy ports, unknown "
@@ -1519,6 +1667,111 @@ def launch_ui(args) -> int:
         return 1
     return serve(sys.modules[__name__], port=args.ui_port, open_window=not args.no_browser,
                  keep_alive=args.keep_alive, lang=args.lang)
+
+
+def scan_inputs(args):
+    """(addresses, ports) for a scan from the command line, or None after logging the problem."""
+    try:
+        ips = parse_targets(args.target, args.max_hosts)
+    except ValueError as err:
+        log(t("invalid_target", err=err))
+        return None
+    try:
+        ports = set(parse_ports(args.ports)) if args.ports else set()
+    except ValueError as err:
+        log(t("invalid_ports", err=err))
+        return None
+    if args.top_ports or not ports:
+        ports |= set(TOP_PORTS)
+    return ips, sorted(ports)
+
+
+def parse_interval(text: str) -> float:
+    """'90s', '15m', '2h' or plain seconds -> seconds (at least 10)."""
+    m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*([smh]?)\s*", text or "")
+    if not m:
+        raise ValueError(text)
+    seconds = float(m.group(1)) * {"": 1, "s": 1, "m": 60, "h": 3600}[m.group(2)]
+    if seconds < 10:
+        raise ValueError(text)
+    return seconds
+
+
+def _load_scan(path: str) -> list:
+    with open(path, encoding="utf-8") as fh:
+        hosts = json.load(fh)["hosts"]
+    if not isinstance(hosts, list):
+        raise TypeError("hosts is not a list")
+    return hosts
+
+
+def run_diff(args) -> int:
+    """`nemla --diff OLD.json NEW.json`: print what changed between two saved scans."""
+    old_path, new_path = args.diff
+    scans = []
+    for path in (old_path, new_path):
+        try:
+            scans.append(_load_scan(path))
+        except (OSError, ValueError, KeyError, TypeError) as err:
+            log(t("d_bad_file", path=path, err=err))
+            return 1
+    diff = diff_scans(*scans)
+    print(t("d_compare_head", old=old_path, new=new_path))
+    for line in diff_lines(diff):
+        print("  " + line)
+    return 3 if args.fail_on_change and diff["summary"]["worse"] else 0
+
+
+def run_watch(args) -> int:
+    """`nemla --watch 15m -t ...`: scan again and again, saying what changed each time."""
+    try:
+        from nemla_ui import guard, history
+    except ImportError:
+        log("The watch files (the nemla_ui/ folder) were not found next to nemla.py.")
+        return 1
+    try:
+        interval = parse_interval(args.watch)
+    except ValueError:
+        log(t("w_bad_interval", value=args.watch))
+        return 1
+    print_banner()
+    inputs = scan_inputs(args)
+    if inputs is None:
+        return 1
+    ips, ports = inputs
+    engine, data_dir = sys.modules[__name__], guard.data_dir()
+    last = history.previous_for(data_dir, args.target, "99999999-999999-~")
+    previous = (history.load(data_dir, last) or {}).get("hosts") if last else None
+    log(t("w_started", target=args.target, every=args.watch))
+    try:
+        while True:
+            hosts, meta = run_scan(args.target, ips, ports, no_ping=args.no_ping, no_os=args.no_os,
+                                   no_banner=args.no_banner, threads=args.threads, timeout=args.timeout)
+            if len(hosts) < meta["discovered"]:  # interrupted part-way: a partial scan proves nothing
+                log(t("interrupted"))
+                return 0
+            if meta["discovered"]:
+                with open(args.output, "w", encoding="utf-8") as f:
+                    f.write(render_html(meta, hosts))
+                scan_id = history.save(data_dir, engine, meta, hosts)
+                if previous is None:
+                    log(t("w_first"))
+                else:
+                    diff = diff_scans(previous, hosts)
+                    for line in diff_lines(diff):
+                        log(line)
+                    if args.watch_log and diff["summary"]["changed"]:
+                        with open(args.watch_log, "a", encoding="utf-8") as fh:
+                            fh.write(json.dumps({"time": meta["scan_time"], "target": args.target,
+                                                 "scan_id": scan_id, "summary": diff["summary"],
+                                                 "lines": diff_lines(diff)}, ensure_ascii=False) + "\n")
+                previous = hosts
+            deadline = time.time() + interval
+            while time.time() < deadline:
+                time.sleep(min(1.0, max(0.0, deadline - time.time())))
+    except KeyboardInterrupt:
+        log(t("w_stopped"))
+    return 0
 
 
 def alert_text(alert: dict) -> str:
@@ -1614,6 +1867,8 @@ def main(argv=None) -> int:
 
     if args.install_launcher or args.uninstall_launcher:
         return manage_launcher(args)
+    if args.diff:
+        return run_diff(args)
     if args.guard:
         return run_guard(args)
     if args.ui or bare:
@@ -1622,22 +1877,14 @@ def main(argv=None) -> int:
     if not args.target:
         parser.error("the following arguments are required: -t/--target "
                      "(or run nemla with no arguments to open the 3D interface)")
+    if args.watch:
+        return run_watch(args)
     print_banner()
 
-    try:
-        ips = parse_targets(args.target, args.max_hosts)
-    except ValueError as err:
-        log(t("invalid_target", err=err))
+    inputs = scan_inputs(args)
+    if inputs is None:
         return 1
-
-    try:
-        ports = set(parse_ports(args.ports)) if args.ports else set()
-    except ValueError as err:
-        log(t("invalid_ports", err=err))
-        return 1
-    if args.top_ports or not ports:
-        ports |= set(TOP_PORTS)
-    ports = sorted(ports)
+    ips, ports = inputs
 
     hosts, meta = run_scan(
         args.target, ips, ports, no_ping=args.no_ping, no_os=args.no_os,
