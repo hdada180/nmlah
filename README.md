@@ -1,743 +1,137 @@
+[README.md](https://github.com/user-attachments/files/32433187/README.md)
+
+
 # 🐜 Nemla — Network Reconnaissance Tool
 
-<p align="center">
+**Discover · Scan · Fingerprint · Report**
 
-**DISCOVER · SCAN · FINGERPRINT · REPORT**
+[![Python](https://img.shields.io/badge/python-3.8%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-orange)](LICENSE)
+[![CI](https://github.com/hdada180/nmlah/actions/workflows/ci.yml/badge.svg)](https://github.com/hdada180/nmlah/actions/workflows/ci.yml)
 
-A lightweight and efficient **network reconnaissance tool written in Python**, designed for authorized security testing, network administration, cybersecurity labs, and educational research.
+**English** · [العربية](README.ar.md)
 
-Nemla discovers active hosts, scans TCP ports, identifies common services, performs basic OS fingerprinting, grabs service banners, and generates a clean HTML report.
+Nemla (Arabic: **نملة**, "ant") is a small, dependency-free network reconnaissance tool written in Python. Point it at an IP, a hostname, a range or a subnet and it finds live hosts, scans TCP ports, grabs service banners, makes a best-guess at the operating system, and writes a clean **HTML report** (plus JSON and CSV for scripting). The interface and the report are available in **English and Arabic**.
 
-</p>
+![Nemla HTML report](docs/report-en.png)
 
-<p align="center">
+> The screenshot is a scan of a local lab (`127.0.0.1`) running a few demo services. See [`nemla_report_sample.html`](nemla_report_sample.html) for the full report.
 
-![Python](https://img.shields.io/badge/Python-3.x-3776AB?style=for-the-badge\&logo=python\&logoColor=white)
-![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Unix-lightgrey?style=for-the-badge)
-![Version](https://img.shields.io/badge/Version-1.0-orange?style=for-the-badge)
-![Security](https://img.shields.io/badge/Purpose-Network%20Recon-red?style=for-the-badge)
+## Why Nemla?
 
-</p>
+[nmap](https://nmap.org) is far more powerful, and you should use it for serious work. Nemla is for the moments when you want something smaller:
 
----
+- **Zero setup** — a single Python file, standard library only. Scapy is optional.
+- **A report you can actually hand to someone** — a readable dark-mode HTML page, no XML converting.
+- **Arabic-first option** — `--lang ar` switches the whole CLI and the report to Arabic (right-to-left).
+- **Readable source** — one file you can read in an evening, which makes it good for learning how scanners work.
 
-## 🧭 Overview
-
-**Nemla** — Arabic: **نملة**, meaning *ant* — is a network reconnaissance utility built around a simple idea:
-
-> **Discover → Scan → Identify → Analyze → Report**
-
-It provides a practical workflow for obtaining an initial view of a network and the services exposed by its active hosts.
-
-```text
-                         ┌──────────────────────┐
-                         │      NEMLA 🐜         │
-                         │ Network Recon Tool    │
-                         └───────────┬──────────┘
-                                     │
-                                     ▼
-                         ┌──────────────────────┐
-                         │   Host Discovery     │
-                         │ ARP / ICMP / TCP      │
-                         └───────────┬──────────┘
-                                     │
-                                     ▼
-                         ┌──────────────────────┐
-                         │    Port Scanning     │
-                         │   Concurrent TCP     │
-                         └───────────┬──────────┘
-                                     │
-                                     ▼
-                         ┌──────────────────────┐
-                         │ Service Identification│
-                         │  Banner Collection   │
-                         └───────────┬──────────┘
-                                     │
-                                     ▼
-                         ┌──────────────────────┐
-                         │  OS Fingerprinting   │
-                         │    TTL + Services    │
-                         └───────────┬──────────┘
-                                     │
-                                     ▼
-                         ┌──────────────────────┐
-                         │     HTML Report      │
-                         │  Results & Summary   │
-                         └──────────────────────┘
-```
-
----
-
-# ✨ Features
-
-## 🛰️ Host Discovery
-
-Nemla supports multiple discovery techniques to identify active hosts:
-
-* **ARP discovery** using Scapy.
-* **ICMP ping** discovery.
-* **TCP probing** against common ports.
-* CIDR network targets.
-* Explicit IP ranges.
-
-Supported target examples:
-
-```text
-192.168.1.0/24
-192.168.1.1
-192.168.1.1-50
-```
-
----
-
-## 🔎 TCP Port Scanning
-
-Nemla performs concurrent TCP connection scanning using Python's `ThreadPoolExecutor`.
-
-You can scan:
-
-* A single port.
-* A list of ports.
-* A port range.
-* A predefined list of common ports.
-
-Examples:
-
-```bash
--p 22
-```
-
-```bash
--p 22,80,443
-```
-
-```bash
--p 1-1000
-```
-
-```bash
---top-ports
-```
-
----
-
-## 🧩 Service Identification
-
-Nemla maps discovered ports to commonly associated services.
-
-|  Port | Service         |
-| ----: | --------------- |
-|    21 | FTP             |
-|    22 | SSH             |
-|    23 | Telnet          |
-|    25 | SMTP            |
-|    53 | DNS             |
-|    80 | HTTP            |
-|   110 | POP3            |
-|   111 | RPCBind         |
-|   135 | MS-RPC          |
-|   139 | NetBIOS         |
-|   143 | IMAP            |
-|   443 | HTTPS           |
-|   445 | SMB             |
-|   465 | SMTPS           |
-|   587 | SMTP Submission |
-|   993 | IMAPS           |
-|   995 | POP3S           |
-|  1433 | MSSQL           |
-|  1521 | Oracle          |
-|  1723 | PPTP            |
-|  2049 | NFS             |
-|  3306 | MySQL           |
-|  3389 | RDP             |
-|  5432 | PostgreSQL      |
-|  5900 | VNC             |
-|  5985 | WinRM           |
-|  6379 | Redis           |
-|  8080 | HTTP Alternate  |
-|  8081 | HTTP Alternate  |
-|  9200 | Elasticsearch   |
-| 11211 | Memcached       |
-| 27017 | MongoDB         |
-|  3128 | Squid           |
-|  6000 | X11             |
-
----
-
-## 🏷️ Banner Grabbing
-
-When possible, Nemla attempts to collect a service banner from open TCP ports.
-
-Example:
-
-```text
-Port: 22
-Service: SSH
-Banner: SSH-2.0-OpenSSH_8.9
-```
-
-Banner information can provide useful context during reconnaissance and service identification.
-
----
-
-## 🖥️ OS Fingerprinting
-
-Nemla performs basic operating-system fingerprinting using:
-
-* TCP/IP TTL values.
-* Detected services.
-* Common Windows indicators such as SMB and RDP.
-* SSH indicators for Linux/Unix-like systems.
-
-Example:
-
-```text
-OS Guess: Linux / Unix
-TTL: 64
-Indicator: SSH
-```
-
-or:
-
-```text
-OS Guess: Windows
-TTL: 128
-Indicators: SMB / RDP
-```
-
-> **Note:** OS fingerprinting is heuristic and should be treated as an estimate rather than definitive identification.
-
----
-
-# 📊 HTML Reporting
-
-Nemla automatically generates a structured **HTML reconnaissance report**.
-
-The report includes:
-
-* Scan target.
-* Scan timestamp.
-* Scan duration.
-* Number of discovered devices.
-* Number of open ports.
-* Number of scanned ports.
-* Host status.
-* IP addresses.
-* MAC addresses when available.
-* OS fingerprint results.
-* Open ports.
-* Service names.
-* Service banners.
-
-The report uses a dark interface with an orange Nemla-inspired visual identity.
-
-Example structure:
-
-```text
-Nemla Report
-│
-├── Scan Summary
-│   ├── Devices Discovered
-│   ├── Open Ports
-│   ├── Ports Scanned
-│   └── Scan Duration
-│
-├── Host Information
-│   ├── IP Address
-│   ├── Status
-│   ├── Operating System
-│   └── MAC Address
-│
-└── Open Ports
-    ├── Port
-    ├── Service
-    └── Banner
-```
-
----
-
-# 🚀 Installation
-
-## Requirements
-
-Nemla requires:
-
-* Python 3.x
-* Scapy
-* A Unix/Linux environment is recommended for full discovery functionality.
-* Appropriate privileges may be required for certain network discovery operations.
-
-### Install Scapy
-
-```bash
-pip3 install scapy
-```
-
-or:
-
-```bash
-pip install scapy
-```
-
-### Clone the repository
+## Install
 
 ```bash
 git clone https://github.com/hdada180/nmlah.git
 cd nmlah
+python3 nemla.py --help
 ```
 
----
-
-# ⚡ Quick Start
-
-## Scan a CIDR network
+Optional, for ARP discovery on local networks and raw-ICMP TTL probing:
 
 ```bash
+pip install scapy        # or: pip install -r requirements.txt
+```
+
+You can also install it as a command: `pip install .` (or `pip install ".[arp]"`), then run `nemla -t ...`.
+
+## Quick start
+
+```bash
+# a whole subnet, common ports
 sudo python3 nemla.py -t 192.168.1.0/24
+
+# one host, ports 1-1000
+python3 nemla.py -t 192.168.1.10 -p 1-1000
+
+# ranges: short form or full form
+python3 nemla.py -t 192.168.1.1-50
+python3 nemla.py -t 192.168.1.1-192.168.2.20
+
+# specific ports + JSON and CSV output
+python3 nemla.py -t 192.168.1.10 -p 22,80,443 --json scan.json --csv scan.csv
+
+# Arabic interface and report
+python3 nemla.py -t 192.168.1.10 --lang ar
+
+# target blocks ping? skip discovery (like nmap -Pn)
+python3 nemla.py -t 192.168.1.10 --no-ping
 ```
 
----
+`sudo` is only needed for ARP discovery and raw-ICMP TTL probing through Scapy. Without it, Nemla falls back to the system `ping` and plain TCP connections.
 
-## Scan an IP range
+## Options
+
+| Option | Description |
+| --- | --- |
+| `-t`, `--target` | IP, hostname, CIDR (`10.0.0.0/24`), short range (`10.0.0.1-50`) or full range (`10.0.0.1-10.0.0.50`) |
+| `-p`, `--ports` | `22`, `22,80,443`, `1-1000` or a mix |
+| `--top-ports` | Also scan the built-in list of common ports (this is the default when `-p` is omitted) |
+| `-o`, `--output` | HTML report path (default `nemla_report.html`) |
+| `--json FILE` | Also write the results as JSON |
+| `--csv FILE` | Also write the results as CSV |
+| `--no-ping` | Skip host discovery; treat every target as up |
+| `--no-os` | Skip OS fingerprinting |
+| `--no-banner` | Skip banner grabbing |
+| `--threads N` | Worker threads (default 150) |
+| `--timeout S` | TCP connect timeout in seconds (default 0.7) |
+| `--max-hosts N` | Refuse targets bigger than N addresses (default 1024) |
+| `--lang en\|ar` | Language of the CLI and the report (default `en`) |
+| `--version` | Print the version |
+
+## How it works
+
+1. **Discovery** — ARP on local networks (needs Scapy + root). If ARP finds nothing, or the target isn't local, Nemla falls back to ICMP (system `ping`) and TCP probes. A TCP connection *refused* still proves the host is alive.
+2. **Port scan** — concurrent TCP connect scan (`ThreadPoolExecutor`). Service names come from a built-in table with a fallback to the system services database.
+3. **Banner grabbing** — Nemla listens first (SSH, FTP and SMTP greet you). If the port stays silent, it sends a harmless HTTP `HEAD`, but only on HTTP ports and ports with no known non-HTTP service. TLS ports are not probed.
+4. **OS guess** — heuristic: TTL (≤64 Linux/Unix/macOS, ≤128 Windows, otherwise network device) refined by open ports (RDP/SMB, SSH). Treat it as an estimate.
+5. **Report** — HTML (all scanned data is HTML-escaped, since banners come from untrusted hosts), plus optional JSON/CSV.
+
+## Limitations
+
+- IPv4 only, TCP connect scan only (no SYN/UDP scanning).
+- OS detection is a TTL-and-ports heuristic, not real fingerprinting.
+- Firewalls that drop packets will make hosts look down. Try `--no-ping` and a larger `--timeout`.
+
+## Responsible use
+
+**Only scan systems and networks you own or have explicit written permission to test.** Unauthorized scanning may violate laws, provider terms and organizational policy. Nemla is a reconnaissance tool: it discovers and reports, it does not exploit anything, and that is intentional. The author is not responsible for misuse.
+
+## Development
 
 ```bash
-sudo python3 nemla.py -t 192.168.1.1-50
+pip install pytest
+python -m pytest -q
 ```
 
----
+The tests run entirely against `127.0.0.1` with throw-away local servers.
 
-## Scan a specific host
+## Roadmap
 
-```bash
-sudo python3 nemla.py -t 192.168.1.10
-```
+- [x] JSON and CSV output
+- [x] English / Arabic interface
+- [x] Unit and end-to-end tests, CI
+- [ ] IPv6 support
+- [ ] MAC vendor lookup
+- [ ] Scan profiles and a config file
+- [ ] Richer service detection (plugin-based)
+- [ ] Interactive HTML report (sorting, filtering)
 
----
+## Contributing
 
-## Scan a port range
+Issues and pull requests are welcome. Please keep changes small, add a test where it makes sense, and keep the tool recon-only. When reporting a bug, include your OS, Python version, the command you ran, and the error output (without private IPs or credentials).
 
-```bash
-sudo python3 nemla.py \
-  -t 192.168.1.10 \
-  -p 1-1000
-```
+## License
 
----
-
-## Scan specific ports
-
-```bash
-sudo python3 nemla.py \
-  -t 192.168.1.10 \
-  -p 22,80,443,445,3389
-```
+[MIT](LICENSE) © hdada180
 
 ---
 
-## Scan common ports
-
-```bash
-sudo python3 nemla.py \
-  -t 192.168.1.10 \
-  --top-ports
-```
-
----
-
-## Generate a custom report
-
-```bash
-sudo python3 nemla.py \
-  -t 192.168.1.0/24 \
-  --top-ports \
-  -o nemla_report.html
-```
-
----
-
-## Disable OS fingerprinting
-
-```bash
-sudo python3 nemla.py \
-  -t 192.168.1.0/24 \
-  --no-os
-```
-
----
-
-## Increase or decrease scan threads
-
-```bash
-sudo python3 nemla.py \
-  -t 192.168.1.0/24 \
-  --threads 100
-```
-
----
-
-# 🛠️ Command-Line Options
-
-| Option           | Description                                  |
-| ---------------- | -------------------------------------------- |
-| `-t`, `--target` | Target IP, CIDR network, or IP range         |
-| `-p`, `--ports`  | Ports, comma-separated ports, or port ranges |
-| `--top-ports`    | Scan the predefined common-port list         |
-| `-o`, `--output` | Output HTML report path                      |
-| `--no-os`        | Disable OS fingerprinting                    |
-| `--threads`      | Number of concurrent worker threads          |
-
----
-
-# 🧠 Architecture
-
-Nemla follows a simple reconnaissance pipeline.
-
-### 1. Discovery
-
-The tool first attempts to identify active hosts.
-
-```text
-Target Network
-      │
-      ├── ARP Discovery
-      │
-      ├── ICMP Discovery
-      │
-      └── TCP Probing
-```
-
----
-
-### 2. Port Scanning
-
-Discovered hosts are then scanned for the selected TCP ports.
-
-```text
-Host
- │
- ├── 22/tcp
- ├── 80/tcp
- ├── 443/tcp
- ├── 445/tcp
- ├── 3389/tcp
- └── ...
-```
-
----
-
-### 3. Fingerprinting
-
-Nemla analyzes the scan results to estimate the operating system and identify services.
-
-```text
-TTL
- │
- ├── OS Guess
- │
- └── Service Indicators
-```
-
----
-
-### 4. Reporting
-
-Finally, all collected information is transformed into an HTML report.
-
-```text
-Scan Results
-      │
-      ▼
-nemla_report.html
-```
-
----
-
-# ⚙️ Performance
-
-Nemla uses concurrent workers to improve scanning performance.
-
-The number of threads can be configured using:
-
-```bash
---threads
-```
-
-Example:
-
-```bash
-sudo python3 nemla.py \
-  -t 192.168.1.0/24 \
-  --top-ports \
-  --threads 150
-```
-
-Actual performance depends on:
-
-* Network size.
-* Number of ports.
-* Network latency.
-* Firewall behavior.
-* Host responsiveness.
-* System resources.
-* Number of concurrent threads.
-
----
-
-# 📁 Project Structure
-
-```text
-nmlah/
-│
-├── nemla.py
-├── README.md
-├── nemla_report_sample.html
-└── LICENSE
-```
-
-The main components are:
-
-| File                       | Purpose                  |
-| -------------------------- | ------------------------ |
-| `nemla.py`                 | Main reconnaissance tool |
-| `README.md`                | Project documentation    |
-| `nemla_report_sample.html` | Example HTML report      |
-| `LICENSE`                  | Project license          |
-
----
-
-# 🧪 Example Output
-
-A discovered Linux/Unix host may appear as:
-
-```text
-Host: 192.168.1.1
-Status: Active
-OS: Linux / Unix
-TTL: 64
-
-Open Ports:
-
-22/tcp    SSH
-80/tcp    HTTP
-```
-
-A Windows host may appear as:
-
-```text
-Host: 192.168.1.20
-Status: Active
-OS: Windows
-TTL: 128
-
-Open Ports:
-
-445/tcp   SMB
-3389/tcp  RDP
-```
-
----
-
-# 🎯 Use Cases
-
-Nemla is intended for **authorized** security and network-management scenarios, including:
-
-* 🔬 Cybersecurity education.
-* 🧪 Security laboratories.
-* 🛡️ Authorized network assessments.
-* 🖥️ Network administration.
-* 🔎 Initial network reconnaissance.
-* 📚 Learning TCP port scanning.
-* 🧠 Learning basic OS fingerprinting.
-* 📑 Generating reconnaissance reports.
-* 🏠 Testing personal/lab networks.
-
----
-
-# 🔐 Responsible Use
-
-Nemla is a reconnaissance tool.
-
-**Only scan systems and networks that you own or have explicit permission to test.**
-
-Unauthorized scanning may violate:
-
-* Organizational policies.
-* Network-provider terms.
-* Local laws.
-* Applicable cybersecurity regulations.
-
-The author is not responsible for misuse of this software.
-
-> **Use Nemla responsibly. Scan with permission. 🐜**
-
----
-
-# 🛡️ Security Philosophy
-
-Nemla focuses on **visibility and information gathering**, not exploitation.
-
-Its purpose is to answer questions such as:
-
-```text
-What devices are active?
-        ↓
-What ports are exposed?
-        ↓
-What services appear to be running?
-        ↓
-What OS might the host be using?
-        ↓
-How can the results be documented?
-```
-
-This makes Nemla useful as an introductory reconnaissance layer before deeper, authorized security assessment.
-
----
-
-# 🗺️ Roadmap
-
-Potential future improvements may include:
-
-* [ ] More advanced OS fingerprinting.
-* [ ] Expanded service detection.
-* [ ] Improved banner parsing.
-* [ ] IPv6 support.
-* [ ] Better MAC/vendor identification.
-* [ ] JSON output.
-* [ ] CSV output.
-* [ ] Richer HTML dashboards.
-* [ ] Scan profiles.
-* [ ] Configuration files.
-* [ ] Improved error handling.
-* [ ] Unit and integration tests.
-* [ ] More discovery methods.
-* [ ] Plugin-based service detection.
-
----
-
-# 🤝 Contributing
-
-Contributions are welcome.
-
-A simple workflow:
-
-```bash
-git clone https://github.com/hdada180/nmlah.git
-cd nmlah
-```
-
-Create a feature branch:
-
-```bash
-git checkout -b feature/my-improvement
-```
-
-Make your changes, test them in an authorized environment, and submit a pull request.
-
-When contributing, please aim for:
-
-* Clean Python code.
-* Clear documentation.
-* Minimal unnecessary dependencies.
-* Safe and responsible functionality.
-* Reproducible testing.
-
----
-
-# 🐛 Bug Reports & Feature Requests
-
-Found a bug or have an idea?
-
-Please open an issue in the GitHub repository and include:
-
-```text
-1. Operating system
-2. Python version
-3. Nemla version
-4. Command used
-5. Expected behavior
-6. Actual behavior
-7. Relevant error output
-```
-
-Avoid publishing sensitive network information, credentials, private IP inventories, or other confidential data in public issues.
-
----
-
-# 📜 License
-
-This project is distributed under the license included in the repository.
-
-See:
-
-```text
-LICENSE
-```
-
-for the complete terms and conditions.
-
----
-
-# 🐜 The Name
-
-Why **Nemla**?
-
-Because an ant may be tiny, but it can explore an entire environment.
-
-```text
-       🐜
-      /|\
-     / | \
-    /  |  \
-       |
-   DISCOVER
-      ↓
-     SCAN
-      ↓
-   IDENTIFY
-      ↓
-    REPORT
-```
-
-**Small tool.
-Big visibility.**
-
----
-
-# ⭐ Support the Project
-
-If Nemla is useful to you:
-
-* ⭐ Star the repository.
-* 🐛 Report bugs.
-* 💡 Suggest improvements.
-* 🔧 Contribute code.
-* 📖 Improve the documentation.
-* 🧪 Test it in authorized environments.
-
-Every contribution helps Nemla grow.
-
----
-
-<p align="center">
-
-# 🐜 Nemla
-
-### **Network Reconnaissance, Simplified.**
-
-**Discover. Scan. Fingerprint. Report.**
-
-</p>
-
-<p align="center">
-
-Made with ❤️ and Python 🐍
-
-</p>
-
----
-
-> ⚠️ **LEGAL & ETHICAL NOTICE**
->
-> Nemla is intended exclusively for authorized security testing, network administration, cybersecurity education, and laboratory environments. Always obtain appropriate authorization before scanning a network or system.
-
+If Nemla is useful to you, a ⭐ helps other people find it.
