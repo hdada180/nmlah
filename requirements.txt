@@ -1,0 +1,3 @@
+# Nemla has no required dependencies.
+# Scapy is optional: it enables ARP discovery and raw-ICMP TTL probing.
+scapy>=2.5

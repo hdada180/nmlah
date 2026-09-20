@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nemla"
+version = "1.1.0"
+description = "Lightweight network reconnaissance tool: host discovery, TCP port scan, banners, OS guess and HTML/JSON/CSV reports (English + Arabic)."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "hdada180" }]
+keywords = ["network", "port-scanner", "reconnaissance", "security", "arabic", "nmap-alternative"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: System :: Networking",
+    "Topic :: Security",
+    "Environment :: Console",
+]
+dependencies = []
+
+[project.optional-dependencies]
+arp = ["scapy>=2.5"]
+dev = ["pytest"]
+
+[project.scripts]
+nemla = "nemla:main"
+
+[project.urls]
+Homepage = "https://github.com/hdada180/nmlah"
+Issues = "https://github.com/hdada180/nmlah/issues"
+
+[tool.setuptools]
+py-modules = ["nemla"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

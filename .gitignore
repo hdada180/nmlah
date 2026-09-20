@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+# scan output (the sample report is tracked on purpose)
+nemla_report.html
+*.scan.json
