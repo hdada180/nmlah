@@ -23,6 +23,40 @@ Nemla (Arabic: **نملة**, "ant") is a small, dependency-free network reconnai
 - **Arabic-first option** — `--lang ar` switches the whole CLI and the report to Arabic (right-to-left).
 - **Readable source** — one file you can read in an evening, which makes it good for learning how scanners work.
 
+## The 3D interface
+
+Run Nemla with no arguments and it opens its own window: a 3D map of your network, a scan form, a live host list and a host inspector. It is the same scanner as the command line, just easier to work with.
+
+```bash
+python3 nemla.py            # opens the 3D interface
+```
+
+- **The colony view.** This computer is the nest in the middle, every discovered host floats around it, and each open port orbits its host, coloured by service type (web, remote access, database, mail, files). Drag to orbit, scroll to zoom, click a host to inspect it.
+- **Live.** Hosts and ports appear while the scan runs. Stop keeps the partial results.
+- **Export.** HTML report, JSON or CSV from the Export button.
+- **English and Arabic**, right-to-left included.
+- **Try it without scanning.** "Watch a demo colony" replays a made-up network.
+- **Standard library only.** The interface is a small local web server plus one page. There is nothing to install and it works offline.
+
+### Add Nemla to the Linux applications menu
+
+```bash
+python3 nemla.py --install-launcher     # menu entry, icon and a `nemla` command, all under ~/.local
+python3 nemla.py --uninstall-launcher   # removes them again
+```
+
+Then open **Nemla** from your applications menu (or type `nemla`). In a Chromium-family browser (Chrome, Chromium, Brave, Edge) it opens as its own window without browser chrome, otherwise in your default browser. Closing the window stops Nemla.
+
+ARP discovery needs root, and browsers refuse to start as root, so for that case run `sudo python3 nemla.py --no-browser` and open the printed address in your browser. Over SSH, forward the port (`ssh -L PORT:127.0.0.1:PORT host`) and open the address locally.
+
+### How it stays safe
+
+The interface listens on `127.0.0.1` only. Every request needs a random token that exists only in the link Nemla opens, and the `Host` and `Origin` headers are checked, so other websites and other machines cannot start scans. Scanned text (banners, OS strings) is shown as plain text, never as HTML, and the page runs under a strict Content-Security-Policy. The first scan asks you to confirm that you own the network or may test it.
+
+### Identity
+
+Nemla has its own logo, colours and type: see [`docs/brand.html`](docs/brand.html). The logo files live in [`nemla_ui/web/brand/`](nemla_ui/web/brand/).
+
 ## Install
 
 ```bash
@@ -80,8 +114,13 @@ python3 nemla.py -t 192.168.1.10 --no-ping
 | `--threads N` | Worker threads (default 150) |
 | `--timeout S` | TCP connect timeout in seconds (default 0.7) |
 | `--max-hosts N` | Refuse targets bigger than N addresses (default 1024) |
-| `--lang en\|ar` | Language of the CLI and the report (default `en`) |
+| `--lang en\|ar` | Language of the CLI, the report and the interface (default `en`) |
 | `--version` | Print the version |
+| `--ui` | Open the 3D interface (also what happens with no arguments) |
+| `--ui-port PORT` | Port for the local interface server (default: any free port) |
+| `--no-browser` | Start the interface server without opening a window |
+| `--keep-alive` | Keep the server running after its window is closed |
+| `--install-launcher` / `--uninstall-launcher` | Linux: add or remove the applications-menu entry |
 
 ## How it works
 
@@ -108,13 +147,15 @@ pip install pytest
 python -m pytest -q
 ```
 
-The tests run entirely against `127.0.0.1` with throw-away local servers.
+The tests run entirely against `127.0.0.1` with throw-away local servers. They also cover the interface server (token, host and origin checks, event stream, reports) and the Linux launcher.
 
 ## Roadmap
 
 - [x] JSON and CSV output
 - [x] English / Arabic interface
 - [x] Unit and end-to-end tests, CI
+- [x] 3D interface, Linux applications-menu launcher and the Nemla identity
+- [ ] Scan history inside the interface
 - [ ] IPv6 support
 - [ ] MAC vendor lookup
 - [ ] Scan profiles and a config file

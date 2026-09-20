@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0A0C11">
+<meta name="referrer" content="no-referrer">
+<title>Nemla · نملة</title>
+<link rel="icon" href="brand/nemla-icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-radar" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12 19 5.5"/></symbol>
+  <symbol id="i-nodes" viewBox="0 0 24 24"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="7" r="2.3"/><circle cx="12" cy="18" r="2.3"/><path d="M8.3 7h7.4M7 9.1l4 6.8M17 9.1l-4 6.8"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 10 3 2-3 2M12.5 15H17"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3.5 12.5v-8h8l9 9-8 8z"/><circle cx="8" cy="9" r="1.2"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></symbol>
+  <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 1 2.4 5.5M4.5 19.5V15H9"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19.5h14"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4"/></symbol>
+</svg>
+
+<div class="backdrop"></div>
+<canvas id="scene" aria-label="3D map of the scanned network"></canvas>
+<div class="vignette"></div>
+
+<div id="ui">
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="Nemla" id="brand">
+      <img class="brand-logo" src="brand/nemla-logo.svg" alt="Nemla">
+      <span class="brand-ar" lang="ar">نملة</span>
+    </a>
+
+    <div class="status" id="status" data-state="idle" role="status">
+      <span class="dot"></span><span id="statusText" data-i18n="status.ready">Ready</span>
+    </div>
+
+    <div class="top-actions">
+      <span class="chip" id="modeChip" data-i18n="mode.standard">Standard mode</span>
+      <button class="icon-btn" id="btnLabels" aria-pressed="true" data-i18n-title="top.labels" data-i18n-aria="top.labels"><svg><use href="#i-tag"/></svg></button>
+      <button class="icon-btn" id="btnReset" data-i18n-title="top.reset" data-i18n-aria="top.reset"><svg><use href="#i-reset"/></svg></button>
+      <div class="menu" id="exportMenu">
+        <button class="btn" id="btnExport" disabled aria-haspopup="true" aria-expanded="false">
+          <svg><use href="#i-download"/></svg><span data-i18n="top.export">Export</span>
+        </button>
+        <div class="menu-pop" id="exportPop" hidden>
+          <a href="#" data-fmt="html"><svg><use href="#i-file"/></svg><span data-i18n="export.html">HTML report</span></a>
+          <a href="#" data-fmt="json"><svg><use href="#i-file"/></svg><span data-i18n="export.json">JSON data</span></a>
+          <a href="#" data-fmt="csv"><svg><use href="#i-file"/></svg><span data-i18n="export.csv">CSV table</span></a>
+        </div>
+      </div>
+      <button class="btn" id="btnLang" lang="ar">العربية</button>
+    </div>
+  </header>
+
+  <aside class="panel dock" id="dock" data-tilt>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="scan" aria-selected="true"><svg><use href="#i-radar"/></svg><span data-i18n="tab.scan">Scan</span></button>
+      <button role="tab" data-tab="hosts" aria-selected="false"><svg><use href="#i-nodes"/></svg><span data-i18n="tab.hosts">Hosts</span><b class="count" id="hostCount" data-n="0"></b></button>
+      <button role="tab" data-tab="log" aria-selected="false"><svg><use href="#i-terminal"/></svg><span data-i18n="tab.log">Trail</span></button>
+    </nav>
+
+    <section class="pane" id="pane-scan" role="tabpanel">
+      <form id="scanForm" autocomplete="off" spellcheck="false">
+        <h2 data-i18n="scan.title">New scan</h2>
+        <div class="form-error" id="formError" hidden></div>
+
+        <label class="field">
+          <span class="label" data-i18n="scan.target">Target</span>
+          <span class="input-wrap">
+            <svg><use href="#i-target"/></svg>
+            <input id="target" type="text" dir="ltr" data-i18n-ph="scan.target.ph" maxlength="200" autocapitalize="off">
+          </span>
+        </label>
+        <div class="chips">
+          <button type="button" class="chip-btn" id="chipNet"><span data-i18n="scan.chip.network">My network</span><code id="chipNetVal">192.168.1.0/24</code></button>
+          <button type="button" class="chip-btn" id="chipSelf"><span data-i18n="scan.chip.self">This computer</span><code>127.0.0.1</code></button>
+        </div>
+
+        <div class="field">
+          <span class="label" data-i18n="scan.depth">Depth</span>
+          <div class="seg" id="depth" role="radiogroup">
+            <label><input type="radio" name="depth" value="quick" checked><span class="seg-btn"><b data-i18n="scan.depth.quick">Quick</b><small id="quickSub" data-i18n="scan.depth.quick.sub" data-i18n-vars='{"n":38}'>38 common ports</small></span></label>
+            <label><input type="radio" name="depth" value="standard"><span class="seg-btn"><b data-i18n="scan.depth.standard">Standard</b><small data-i18n="scan.depth.standard.sub">Ports 1–1024</small></span></label>
+            <label><input type="radio" name="depth" value="deep"><span class="seg-btn"><b data-i18n="scan.depth.deep">Deep</b><small data-i18n="scan.depth.deep.sub">Ports 1–10000</small></span></label>
+            <label><input type="radio" name="depth" value="custom"><span class="seg-btn"><b data-i18n="scan.depth.custom">Custom</b><small data-i18n="scan.depth.custom.sub">You choose</small></span></label>
+          </div>
+          <input id="ports" type="text" dir="ltr" data-i18n-ph="scan.ports.ph" hidden>
+        </div>
+
+        <div class="toggles">
+          <label class="switch"><span data-i18n="scan.opt.os">Guess the operating system</span><input type="checkbox" id="optOs" checked><span class="track"></span></label>
+          <label class="switch"><span data-i18n="scan.opt.banner">Read service banners</span><input type="checkbox" id="optBanner" checked><span class="track"></span></label>
+          <label class="switch"><span data-i18n="scan.opt.noping">Skip ping (target blocks it)</span><input type="checkbox" id="optNoPing"><span class="track"></span></label>
+        </div>
+
+        <details class="adv">
+          <summary><span data-i18n="scan.advanced">Advanced</span><svg><use href="#i-chevron"/></svg></summary>
+          <div class="two">
+            <label><span class="label" data-i18n="scan.threads">Threads</span><input id="optThreads" type="number" min="1" max="500" value="150" dir="ltr"></label>
+            <label><span class="label" data-i18n="scan.timeout">Timeout (s)</span><input id="optTimeout" type="number" min="0.1" max="10" step="0.1" value="0.7" dir="ltr"></label>
+          </div>
+        </details>
+
+        <button class="btn primary" id="btnStart" type="submit"><svg><use href="#i-play"/></svg><span data-i18n="scan.start">Start scan</span></button>
+        <p class="notice" data-i18n="scan.notice">Only scan networks you own or are allowed to test.</p>
+        <p class="center"><button type="button" class="link" id="btnDemo" data-i18n="scan.demo">Watch a demo colony</button></p>
+      </form>
+    </section>
+
+    <section class="pane" id="pane-hosts" role="tabpanel" hidden>
+      <div class="filter"><span class="input-wrap"><svg><use href="#i-search"/></svg><input id="hostFilter" type="text" data-i18n-ph="hosts.filter"></span></div>
+      <ul class="host-list" id="hostList"></ul>
+      <p class="empty" id="hostEmpty" data-i18n="hosts.empty">No hosts yet. Start a scan to send out the first ant.</p>
+    </section>
+
+    <section class="pane" id="pane-log" role="tabpanel" hidden>
+      <ul class="log-list" id="logList"></ul>
+      <p class="empty" id="logEmpty" data-i18n="log.empty">The trail will show what Nemla is doing.</p>
+    </section>
+  </aside>
+
+  <aside class="panel inspector" id="inspector" data-tilt hidden aria-live="polite">
+    <div class="insp-head">
+      <div><small data-i18n="insp.host">Host</small><h2 id="inspIp">0.0.0.0</h2></div>
+      <button class="icon-btn" id="inspClose" data-i18n-aria="insp.close" data-i18n-title="insp.close"><svg><use href="#i-x"/></svg></button>
+    </div>
+    <div class="badges" id="inspBadges"></div>
+    <div class="insp-body">
+      <dl class="kv" id="inspKv"></dl>
+      <h3><span data-i18n="insp.ports">Open ports</span><b class="count" id="inspCount" data-n="0"></b></h3>
+      <ul class="port-list" id="inspPorts"></ul>
+    </div>
+    <div class="insp-foot"><button class="btn" id="inspCopy"><svg><use href="#i-copy"/></svg><span data-i18n="insp.copy">Copy summary</span></button></div>
+  </aside>
+
+  <section class="panel hud" id="hud" data-state="idle" data-tilt>
+    <div class="stat"><span class="k" data-i18n="hud.hosts">Hosts</span><b id="statHosts">0</b></div>
+    <div class="stat"><span class="k" data-i18n="hud.open">Open ports</span><b id="statPorts">0</b></div>
+    <div class="stat"><span class="k" data-i18n="hud.time">Elapsed</span><b id="statTime">0.0s</b></div>
+    <div class="progress">
+      <div class="phase"><span class="demo-badge" id="demoBadge" hidden data-i18n="demo.badge">DEMO</span> <span id="phaseText" data-i18n="phase.idle">Ready when you are</span></div>
+      <div class="bar"><i id="barFill"></i></div>
+    </div>
+    <button class="btn danger" id="btnStop" hidden><svg><use href="#i-stop"/></svg><span data-i18n="scan.stop">Stop</span></button>
+  </section>
+
+  <div class="hint" id="hint"><span data-i18n="hint.idle">Press Start to send out the first ant</span></div>
+
+  <aside class="panel legend" id="legend" aria-hidden="true"></aside>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+</div>
+
+<div class="tip" id="tip" hidden></div>
+
+<dialog id="consent">
+  <img src="brand/nemla-mark.svg" alt="">
+  <h2 data-i18n="consent.title">Before your first scan</h2>
+  <p data-i18n="consent.body">Nemla probes the addresses you give it.</p>
+  <label class="check"><input type="checkbox" id="consentCheck"><span data-i18n="consent.check">I own this network or have permission to test it</span></label>
+  <div class="dialog-actions">
+    <button class="btn" id="consentCancel" data-i18n="consent.cancel">Cancel</button>
+    <button class="btn primary" id="consentOk" disabled data-i18n="consent.ok">Continue</button>
+  </div>
+</dialog>
+
+<div class="overlay" id="lost" hidden>
+  <div><img src="brand/nemla-mark.svg" alt=""><h2 id="lostTitle"></h2><p id="lostBody"></p></div>
+</div>
+
+<div class="splash" id="splash" aria-hidden="true">
+  <img class="mark" src="brand/nemla-mark.svg" alt="">
+  <pre class="logo-block" dir="ltr">██      ██  ██████████  ██      ██  ██            ██████  
+████    ██  ██          ████  ████  ██          ██      ██
+██  ██  ██  ████████    ██  ██  ██  ██          ██████████
+██    ████  ██          ██      ██  ██          ██      ██
+██      ██  ██████████  ██      ██  ██████████  ██      ██</pre>
+  <div class="ar-name" lang="ar">نملة</div>
+  <div class="tag" data-i18n="app.tagline">Discover · Scan · Fingerprint · Report</div>
+  <ul class="boot" dir="ltr">
+    <li style="--i:0"><span class="chev">▸</span><span data-i18n="boot.colony">Waking the colony</span><b>ok</b></li>
+    <li style="--i:1"><span class="chev">▸</span><span data-i18n="boot.net">Checking network interfaces</span><b>ok</b></li>
+    <li style="--i:2"><span class="chev">▸</span><span data-i18n="boot.trail">Laying the pheromone trail</span><b>ok</b></li>
+  </ul>
+</div>
+
+<script src="i18n.js"></script>
+<script src="scene.js"></script>
+<script src="demo.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

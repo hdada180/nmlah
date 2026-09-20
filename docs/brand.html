@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nemla identity · هوية نملة</title>
+<link rel="icon" href="../nemla_ui/web/brand/nemla-icon.svg" type="image/svg+xml">
+<style>
+:root {
+  --ember-300:#FFC98A; --ember-400:#FFA24D; --ember-500:#FF7A1A; --ember-600:#E85D04; --amber:#FFC46B;
+  --night-900:#0A0C11; --night-850:#0F121A; --night-800:#141824; --night-700:#1C2231; --night-600:#2A3246;
+  --ink:#EEF0F6; --ink-dim:#A2ABBE; --ink-faint:#6E778C;
+  --mint:#3EE6B4; --sky:#4CC2FF; --violet:#A08BFF; --rose:#FF5D8F; --gold:#FFC247; --slate:#8FA0C4;
+  --grad: linear-gradient(135deg,#FFC46B 0%,#FF7A1A 52%,#E8460C 100%);
+  --line: rgba(255,255,255,.09);
+  --mono: "JetBrains Mono","DejaVu Sans Mono",ui-monospace,Consolas,monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin:0; background: var(--night-900); color: var(--ink); font: 15px/1.6 "Inter","Segoe UI","Noto Sans","Noto Sans Arabic","Cairo",system-ui,sans-serif; -webkit-font-smoothing: antialiased; }
+body::before { content:""; position:fixed; inset:0; z-index:-1; background: radial-gradient(1000px 600px at 12% -5%, rgba(255,122,26,.14), transparent 60%), radial-gradient(800px 500px at 100% 30%, rgba(76,194,255,.06), transparent 60%); }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px 96px; }
+header.hero { padding: 72px 0 40px; display: grid; gap: 24px; }
+.hero img.logo { width: min(560px, 100%); height: auto; filter: drop-shadow(0 10px 40px rgba(255,122,26,.3)); }
+.hero p { margin: 0; color: var(--ink-dim); max-width: 60ch; font-size: 17px; }
+.tags { display:flex; flex-wrap:wrap; gap:10px; }
+.tags span { padding: 6px 14px; border-radius: 999px; border:1px solid var(--line); background: rgba(255,255,255,.03); font-weight: 600; font-size: 13px; }
+h2 { margin: 64px 0 6px; font-size: 26px; letter-spacing: .2px; }
+h2 small { display:block; color: var(--ink-faint); font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+.lead { color: var(--ink-dim); margin: 0 0 24px; max-width: 70ch; }
+.grid { display:grid; gap:16px; }
+.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 720px) { .g2 { grid-template-columns: minmax(0, 1fr); } }
+.g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.g5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 820px) { .g3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .g5 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.card { border:1px solid var(--line); border-radius: 20px; background: linear-gradient(180deg, rgba(27,32,46,.7), rgba(13,16,24,.7)); padding: 24px; }
+.card h3 { margin: 0 0 4px; font-size: 15px; }
+.card p { margin: 6px 0 0; color: var(--ink-dim); font-size: 13.5px; }
+.stage { display:grid; place-items:center; min-height: 190px; border-radius: 14px; margin-bottom: 14px; background: var(--night-850); border:1px solid var(--line); padding: 20px; }
+.stage.light { background:#F4F1EA; color:#0A0C11; }
+.stage img { display:block; max-width: 100%; height: auto; }
+.row { display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; justify-content:center; }
+.row figure { margin:0; text-align:center; color: var(--ink-faint); font-size: 11px; font-family: var(--mono); }
+.row figure img { margin: 0 auto 8px; }
+.sw { border-radius: 16px; overflow:hidden; border:1px solid var(--line); background: var(--night-850); }
+.sw .chip { height: 92px; }
+.sw .meta { padding: 12px 14px 14px; }
+.sw b { display:block; font-size: 14px; }
+.sw code { font-family: var(--mono); font-size: 12px; color: var(--ember-300); }
+.sw span { display:block; color: var(--ink-dim); font-size: 12.5px; margin-top: 2px; }
+.grad-bar { height: 76px; border-radius: 18px; background: var(--grad); box-shadow: 0 20px 50px -20px rgba(255,122,26,.7); display:flex; align-items:center; padding: 0 20px; color:#1E0C02; font-weight:800; }
+pre.banner { margin:0; overflow:auto; white-space:pre; font: 700 15px/1.04 var(--mono); background: linear-gradient(180deg,#FFC46B 0%,#FF8A22 50%,#E8460C 100%); -webkit-background-clip:text; background-clip:text; color:transparent; filter: drop-shadow(0 0 14px rgba(255,122,26,.45)); }
+.term { background:#07080B; border:1px solid var(--line); border-radius: 14px; padding: 22px; overflow:auto; }
+.term .dim { color: var(--ink-dim); font: 12.5px/1.7 var(--mono); margin-top: 12px; white-space: pre-wrap; }
+.type dl { margin:0; display:grid; grid-template-columns: 130px 1fr; gap: 10px 16px; }
+.type dt { color: var(--ink-faint); font-size: 12px; text-transform: uppercase; letter-spacing:.8px; font-weight:700; padding-top: 4px; }
+.type dd { margin:0; }
+.sample-ar { text-align: left; font-family: "Noto Kufi Arabic","Noto Sans Arabic","Cairo","Segoe UI",sans-serif; font-weight: 800; font-size: 34px; color: var(--ember-400); }
+.sample-mono { font-family: var(--mono); color: var(--ember-300); }
+ul.rules { margin: 0; padding-inline-start: 18px; color: var(--ink-dim); }
+ul.rules li { margin: 4px 0; }
+ul.rules b { color: var(--ink); }
+footer { margin-top: 72px; color: var(--ink-faint); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <img class="logo" src="../nemla_ui/web/brand/nemla-logo.svg" alt="Nemla">
+  <p><b>Nemla · نملة</b> is a small ant that walks your network and reports back. The identity keeps that idea simple: a warm ember colour on a deep night background, and an ant whose legs end in network nodes.</p>
+  <div class="tags"><span>Discover · Scan · Fingerprint · Report</span><span lang="ar" dir="rtl">اكتشاف · فحص · تخمين · تقرير</span></div>
+</header>
+
+<h2><small>01 · Logo</small>The mark</h2>
+<p class="lead">Three body segments (head, thorax, abdomen), six legs and two antennae. Every leg and antenna ends in a node: the ant is also a network graph. It is built from round strokes only, so it stays crisp from 16 px to a poster.</p>
+<div class="grid g2">
+  <div class="card">
+    <div class="stage"><img src="../nemla_ui/web/brand/nemla-mark.svg" width="180" height="180" alt="Nemla mark"></div>
+    <h3>Primary mark</h3><p>Ember gradient on a dark background. <code>nemla_ui/web/brand/nemla-mark.svg</code></p>
+  </div>
+  <div class="card">
+    <div class="stage"><img src="../nemla_ui/web/brand/nemla-logo.svg" width="360" alt="Nemla logo"></div>
+    <h3>Lockup</h3><p>Mark plus a hand-drawn monoline wordmark. The <b>l</b> carries the amber accent. <code>nemla-logo.svg</code></p>
+  </div>
+  <div class="card">
+    <div class="stage light"><img src="../nemla_ui/web/brand/nemla-mark-mono.svg" width="120" height="120" alt="Mono mark" style="color:#0A0C11"></div>
+    <h3>One colour</h3><p>Uses <code>currentColor</code>, so it follows the surrounding text colour. <code>nemla-mark-mono.svg</code></p>
+  </div>
+  <div class="card">
+    <div class="stage"><div class="row">
+      <figure><img src="../nemla_ui/web/brand/nemla-icon.svg" width="128" height="128" alt="">256</figure>
+      <figure><img src="../nemla_ui/web/brand/nemla-icon.svg" width="64" height="64" alt="">64</figure>
+      <figure><img src="../nemla_ui/web/brand/nemla-icon.svg" width="32" height="32" alt="">32</figure>
+      <figure><img src="../nemla_ui/web/brand/nemla-icon.svg" width="16" height="16" alt="">16</figure>
+    </div></div>
+    <h3>App icon</h3><p>Used for the Linux applications menu and the browser tab. <code>nemla-icon.svg</code></p>
+  </div>
+</div>
+
+<h2><small>02 · Colour</small>Ember on night</h2>
+<p class="lead">Nemla was already orange; the identity keeps that and gives it depth. Ember is the only warm colour and always means "Nemla is acting". Everything else is a calm night blue-black, plus a small set of signal colours for service types.</p>
+<div class="grad-bar">Pheromone gradient · #FFC46B → #FF7A1A → #E8460C</div>
+<div class="grid g3" style="margin-top:16px">
+  <div class="sw"><div class="chip" style="background:#FF7A1A"></div><div class="meta"><b>Ember</b><code>#FF7A1A</code><span>Primary. Actions, the logo, the active scan.</span></div></div>
+  <div class="sw"><div class="chip" style="background:#FFC46B"></div><div class="meta"><b>Amber</b><code>#FFC46B</code><span>Highlights and the top of the gradient.</span></div></div>
+  <div class="sw"><div class="chip" style="background:#E8460C"></div><div class="meta"><b>Deep ember</b><code>#E8460C</code><span>Bottom of the gradient, pressed states.</span></div></div>
+  <div class="sw"><div class="chip" style="background:#0A0C11"></div><div class="meta"><b>Night</b><code>#0A0C11</code><span>Page background. Panels step up: #141824, #1C2231.</span></div></div>
+  <div class="sw"><div class="chip" style="background:#EEF0F6"></div><div class="meta"><b>Ink</b><code>#EEF0F6</code><span>Text. Dimmed: #A2ABBE and #6E778C.</span></div></div>
+  <div class="sw"><div class="chip" style="background:#3EE6B4"></div><div class="meta"><b>Mint</b><code>#3EE6B4</code><span>Alive, finished, mail services.</span></div></div>
+</div>
+<h3 style="margin:28px 0 12px;font-size:15px;color:var(--ink-dim)">Signal colours for open ports</h3>
+<div class="grid g5">
+  <div class="sw"><div class="chip" style="background:#4CC2FF;height:52px"></div><div class="meta"><b>Sky</b><code>#4CC2FF</code><span>Web: 80, 443, 8080…</span></div></div>
+  <div class="sw"><div class="chip" style="background:#FF5D8F;height:52px"></div><div class="meta"><b>Rose</b><code>#FF5D8F</code><span>Remote access: SSH, RDP, VNC, Telnet</span></div></div>
+  <div class="sw"><div class="chip" style="background:#A08BFF;height:52px"></div><div class="meta"><b>Violet</b><code>#A08BFF</code><span>Databases: MySQL, PostgreSQL, Redis…</span></div></div>
+  <div class="sw"><div class="chip" style="background:#FFC247;height:52px"></div><div class="meta"><b>Gold</b><code>#FFC247</code><span>Files &amp; RPC: FTP, SMB, NFS</span></div></div>
+  <div class="sw"><div class="chip" style="background:#8FA0C4;height:52px"></div><div class="meta"><b>Slate</b><code>#8FA0C4</code><span>Everything else, and hosts not yet scanned</span></div></div>
+</div>
+
+<h2><small>03 · Type</small>Letters</h2>
+<p class="lead">No font files are shipped, so Nemla works offline and looks native on any Linux desktop. The wordmark itself is drawn as vector strokes, not typed.</p>
+<div class="card type"><dl>
+  <dt>Interface</dt><dd>Inter, Segoe UI, Noto Sans, system-ui</dd>
+  <dt>Arabic</dt><dd class="sample-ar" lang="ar" dir="rtl">نملة</dd>
+  <dt></dt><dd style="color:var(--ink-dim);font-size:13px">Noto Kufi Arabic, Noto Sans Arabic, Cairo. The Arabic name is set in extra bold, in Ember.</dd>
+  <dt>Data</dt><dd class="sample-mono">192.168.1.10 · 22/tcp SSH-2.0-OpenSSH_9.6</dd>
+  <dt></dt><dd style="color:var(--ink-dim);font-size:13px">JetBrains Mono, DejaVu Sans Mono, Consolas. IP addresses, ports and banners are always monospace and always left-to-right, even inside Arabic text.</dd>
+</dl></div>
+
+<h2><small>04 · In use</small>Opening Nemla</h2>
+<p class="lead">Whenever Nemla starts, it greets you with the same block-letter logo, in the terminal and on the splash screen of the 3D interface.</p>
+<div class="term"><pre class="banner">██      ██  ██████████  ██      ██  ██            ██████
+████    ██  ██          ████  ████  ██          ██      ██
+██  ██  ██  ████████    ██  ██  ██  ██          ██████████
+██    ████  ██          ██      ██  ██          ██      ██
+██      ██  ██████████  ██      ██  ██████████  ██      ██</pre>
+<div class="dim">نملة  ·  Discover · Scan · Fingerprint · Report  ·  v1.1.0
+Use only on networks you own or are authorized to test.</div></div>
+
+<h2><small>05 · Rules</small>Using it well</h2>
+<div class="grid g2">
+  <div class="card"><h3>Do</h3><ul class="rules">
+    <li>Keep clear space around the mark equal to the width of one leg node.</li>
+    <li>Use the mono version on light or busy backgrounds.</li>
+    <li>Keep the minimum size at 16 px for the icon and 96 px wide for the lockup.</li>
+    <li>Use Ember only for Nemla's own actions and identity.</li>
+  </ul></div>
+  <div class="card"><h3>Don't</h3><ul class="rules">
+    <li><b>Don't</b> recolour the mark outside the palette above.</li>
+    <li><b>Don't</b> stretch, rotate or outline the ant.</li>
+    <li><b>Don't</b> put the gradient mark on a light background: use the mono mark.</li>
+    <li><b>Don't</b> use Rose or Gold for decoration; they mean service types.</li>
+  </ul></div>
+</div>
+
+<footer>Nemla · نملة identity. Source files: <code>nemla_ui/web/brand/</code>. Colours are also the CSS variables at the top of <code>nemla_ui/web/style.css</code>.</footer>
+</div>
+</body>
+</html>

@@ -7,6 +7,7 @@ Discover hosts, scan TCP ports, grab banners, guess the OS and generate
 an HTML / JSON / CSV report.
 
 Examples:
+    python3 nemla.py                        # open the 3D interface
     sudo python3 nemla.py -t 192.168.1.0/24
     python3 nemla.py -t 192.168.1.1-50 -p 1-1000
     python3 nemla.py -t 192.168.1.10 --top-ports --lang ar
@@ -20,8 +21,10 @@ import argparse
 import csv
 import errno
 import html
+import io
 import ipaddress
 import json
+import os
 import re
 import shutil
 import socket
@@ -29,7 +32,7 @@ import subprocess
 import sys
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime
 
 try:  # scapy is optional: it enables ARP discovery and raw-ICMP TTL probing
@@ -162,6 +165,7 @@ STRINGS = {
 
 _LANG = "en"
 _PRINT_LOCK = threading.Lock()
+_LOG_SINK = None  # optional callable(str): the 3D interface mirrors log lines here
 
 
 def t(key: str, **kw) -> str:
@@ -172,12 +176,58 @@ def t(key: str, **kw) -> str:
 
 def log(msg: str) -> None:
     with _PRINT_LOCK:
-        print(f"[{datetime.now():%H:%M:%S}] {msg}", flush=True)
+        try:
+            print(f"[{datetime.now():%H:%M:%S}] {msg}", flush=True)
+        except (OSError, ValueError):  # no console (desktop launcher) or a closed stream
+            pass
+    sink = _LOG_SINK
+    if sink is not None:
+        sink(msg)
+
+
+LOGO_LINES = (
+    "██      ██  ██████████  ██      ██  ██            ██████  ",
+    "████    ██  ██          ████  ████  ██          ██      ██",
+    "██  ██  ██  ████████    ██  ██  ██  ██          ██████████",
+    "██    ████  ██          ██      ██  ██          ██      ██",
+    "██      ██  ██████████  ██      ██  ██████████  ██      ██",
+)
+# amber -> ember -> deep ember, top to bottom (the Nemla palette)
+LOGO_GRADIENT = ((255, 196, 107), (255, 152, 48), (255, 122, 26), (240, 92, 18), (232, 70, 12))
+
+
+def fancy_output_ok() -> bool:
+    """True when stdout is a UTF-8 terminal that can show the block-letter logo."""
+    stream = sys.stdout
+    try:
+        tty = stream.isatty()
+    except (AttributeError, ValueError):
+        tty = False
+    encoding = (getattr(stream, "encoding", "") or "").lower()
+    return tty and "utf" in encoding and os.environ.get("TERM") != "dumb"
+
+
+def banner_text(color: bool = True) -> str:
+    """The startup banner: block-letter NEMLA in the ember gradient."""
+    lines = [""]
+    for row, rgb in zip(LOGO_LINES, LOGO_GRADIENT):
+        lines.append("  " + (f"\x1b[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m{row}\x1b[0m" if color else row))
+    dim, reset = ("\x1b[38;2;162;171;190m", "\x1b[0m") if color else ("", "")
+    lines += [
+        "",
+        f"  {dim}نملة  ·  Discover · Scan · Fingerprint · Report  ·  v{__version__}{reset}",
+        f"  {dim}{t('notice')}{reset}",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def print_banner() -> None:
-    print(f"\n  \U0001F41C  Nemla / نملة  v{__version__}  -  Network Recon")
-    print(f"  {t('notice')}\n")
+    if fancy_output_ok():
+        print(banner_text(color="NO_COLOR" not in os.environ))
+    else:
+        print(f"\n  \U0001F41C  Nemla / نملة  v{__version__}  -  Network Recon")
+        print(f"  {t('notice')}\n")
 
 
 # ---------------------------------------------------------------------------
@@ -315,14 +365,50 @@ def icmp_ping(ip: str) -> bool:
         return False
 
 
+def _pool_map(func, items, workers: int, cancel=None):
+    """Run func(item) on a thread pool and yield (item, result) as each one finishes.
+
+    When the optional `cancel` event is set, queued work is dropped and the
+    generator stops, so a scan can be interrupted quickly (Ctrl+C or the UI's
+    Stop button) instead of draining the whole queue.
+    """
+    items = list(items)
+    if not items:
+        return
+    ex = ThreadPoolExecutor(max_workers=max(1, min(workers, len(items))))
+    futures = {ex.submit(func, item): item for item in items}
+    pending = set(futures)
+    try:
+        while pending:
+            if cancel is not None and cancel.is_set():
+                return
+            done, pending = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+            for fut in done:
+                yield futures[fut], fut.result()
+    finally:
+        for fut in pending:
+            fut.cancel()
+        ex.shutdown(wait=False)
+
+
 def discover_hosts(ips: list, workers: int = 100, probe_ports=DISCOVERY_PORTS,
-                   use_arp: bool = True) -> dict:
-    """ARP first (local networks); if it finds nothing, fall back to ICMP + TCP."""
+                   use_arp: bool = True, on_host=None, on_progress=None,
+                   cancel=None) -> dict:
+    """ARP first (local networks); if it finds nothing, fall back to ICMP + TCP.
+
+    Optional hooks: on_host(ip, info) for every live host as soon as it is
+    known, on_progress(done, total) while sweeping, and a `cancel` event.
+    """
     if use_arp and HAVE_SCAPY and ips and all(_is_local(ip) for ip in ips):
         log(t("arp_start", n=len(ips)))
         arp = arp_scan(ips)
         if arp:
             found = {ip: {"mac": mac, "method": "ARP"} for ip, mac in arp.items()}
+            for ip, info in found.items():
+                if on_host:
+                    on_host(ip, info)
+            if on_progress:
+                on_progress(len(ips), len(ips))
             log(t("found", n=len(found)))
             return found
 
@@ -330,13 +416,17 @@ def discover_hosts(ips: list, workers: int = 100, probe_ports=DISCOVERY_PORTS,
     found = {}
 
     def probe(ip):
-        return ip if (icmp_ping(ip) or tcp_ping(ip, probe_ports)) else None
+        return icmp_ping(ip) or tcp_ping(ip, probe_ports)
 
-    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(ips)))) as ex:
-        for fut in as_completed([ex.submit(probe, ip) for ip in ips]):
-            ip = fut.result()
-            if ip:
-                found[ip] = {"mac": None, "method": "ICMP/TCP"}
+    done = 0
+    for ip, alive in _pool_map(probe, ips, workers, cancel):
+        done += 1
+        if alive:
+            found[ip] = {"mac": None, "method": "ICMP/TCP"}
+            if on_host:
+                on_host(ip, found[ip])
+        if on_progress:
+            on_progress(done, len(ips))
     log(t("found", n=len(found)))
     return found
 
@@ -406,14 +496,21 @@ def scan_port(ip: str, port: int, timeout: float = 0.7, grab: bool = True):
 
 
 def scan_host_ports(ip: str, ports: list, workers: int = 150,
-                    timeout: float = 0.7, grab: bool = True) -> list:
+                    timeout: float = 0.7, grab: bool = True, on_port=None,
+                    on_progress=None, cancel=None) -> list:
+    """Scan `ports` on one host. Optional hooks: on_port(result) for every open
+    port as it is found, on_progress(done, total), and a `cancel` event."""
     found = []
-    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(ports)))) as ex:
-        futures = [ex.submit(scan_port, ip, p, timeout, grab) for p in ports]
-        for fut in as_completed(futures):
-            res = fut.result()
-            if res:
-                found.append(res)
+    done = 0
+    for _, res in _pool_map(lambda p: scan_port(ip, p, timeout, grab),
+                            ports, workers, cancel):
+        done += 1
+        if res:
+            found.append(res)
+            if on_port:
+                on_port(res)
+        if on_progress:
+            on_progress(done, len(ports))
     return sorted(found, key=lambda r: r["port"])
 
 
@@ -457,6 +554,110 @@ def guess_os(ttl, open_ports: list) -> str:
 
 
 # ---------------------------------------------------------------------------
+# The scan pipeline (shared by the command line and the 3D interface)
+# ---------------------------------------------------------------------------
+
+def run_scan(target: str, ips: list, ports: list, *, no_ping: bool = False,
+             no_os: bool = False, no_banner: bool = False, threads: int = 150,
+             timeout: float = 0.7, emit=None, cancel=None):
+    """Discover hosts, scan their ports, guess the OS. Returns (hosts, meta).
+
+    `emit(event: dict)` receives live progress events (phase, progress, host,
+    host_start, port, host_done) and `cancel` is a threading.Event that stops
+    the scan early. `meta["discovered"]` is the number of live hosts found.
+    """
+    def send(event):
+        if emit is not None:
+            emit(event)
+
+    cancel = cancel if cancel is not None else threading.Event()
+    threads = max(1, threads)
+    start = time.time()
+
+    send({"type": "phase", "phase": "discovery", "total": len(ips)})
+    if no_ping:
+        log(t("skip_discovery", n=len(ips)))
+        hosts_map = {ip: {"mac": None, "method": "skipped"} for ip in ips}
+        for ip, info in hosts_map.items():
+            send({"type": "host", "ip": ip, "mac": None, "method": info["method"]})
+    else:
+        probe_ports = sorted(set(DISCOVERY_PORTS) | set(ports[:15]))
+        last = [0.0]
+
+        def on_progress(done, total):
+            now = time.time()
+            if done >= total or now - last[0] >= 0.1:  # keep the event stream light
+                last[0] = now
+                send({"type": "progress", "phase": "discovery", "done": done, "total": total})
+
+        hosts_map = discover_hosts(
+            ips, workers=threads, probe_ports=probe_ports, cancel=cancel,
+            on_progress=on_progress,
+            on_host=lambda ip, info: send({"type": "host", "ip": ip,
+                                           "mac": info.get("mac"),
+                                           "method": info.get("method")}),
+        )
+
+    hosts = []
+    if not hosts_map:
+        log(t("no_hosts"))
+    elif not cancel.is_set():
+        log(t("port_count", n=len(ports)))
+        order = sorted(hosts_map, key=lambda x: int(ipaddress.ip_address(x)))
+        send({"type": "phase", "phase": "ports", "total": len(order), "ports": len(ports)})
+        try:
+            for index, ip in enumerate(order, 1):
+                if cancel.is_set():
+                    break
+                log(t("scanning", ip=ip))
+                send({"type": "host_start", "ip": ip, "index": index, "total": len(order)})
+                port_last = [0.0]
+
+                def on_port_progress(done, total, ip=ip, port_last=port_last):
+                    now = time.time()
+                    if done >= total or now - port_last[0] >= 0.1:
+                        port_last[0] = now
+                        send({"type": "progress", "phase": "ports", "ip": ip,
+                              "done": done, "total": total})
+
+                open_ports = scan_host_ports(
+                    ip, ports, threads, timeout, grab=not no_banner, cancel=cancel,
+                    on_progress=on_port_progress,
+                    on_port=lambda res, ip=ip: send({"type": "port", "ip": ip, **res}),
+                )
+                if cancel.is_set():
+                    break
+                ttl = None
+                if no_os:
+                    os_guess = t("os_skipped")
+                else:
+                    ttl = get_ttl(ip)
+                    os_guess = guess_os(ttl, open_ports)
+                    if ttl:
+                        os_guess += f" (TTL={ttl})"
+                host = {
+                    "ip": ip, "mac": hosts_map[ip].get("mac"),
+                    "discovery": hosts_map[ip].get("method"),
+                    "os_guess": os_guess, "ttl": ttl, "open_ports": open_ports,
+                }
+                hosts.append(host)
+                send({"type": "host_done", "host": host})
+                log(t("host_done", n=len(open_ports), os=os_guess))
+        except KeyboardInterrupt:
+            log(t("interrupted"))
+
+    meta = {
+        "target": target,
+        "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "duration": time.time() - start,
+        "ports_scanned": len(ports),
+        "discovered": len(hosts_map),
+        "cancelled": cancel.is_set(),
+    }
+    return hosts, meta
+
+
+# ---------------------------------------------------------------------------
 # Reports
 # ---------------------------------------------------------------------------
 
@@ -468,17 +669,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <title>@@TITLE@@ - @@TARGET@@</title>
 <style>
 :root {
-  --bg: #0d0d0d; --panel: #171512; --ant-orange: #ff8c00;
-  --ant-orange-dim: #b35f00; --text: #eee8dc; --text-dim: #9a9184;
-  --border: #2a251f; --up: #6fcf6f;
+  --bg: #0a0c11; --panel: #10141c; --ant-orange: #ff7a1a;
+  --ant-orange-dim: #b84400; --text: #eef0f6; --text-dim: #a2abbe;
+  --border: #232a3b; --up: #3ee6b4;
 }
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--text); margin: 0; padding: 0 0 60px;
   font-family: 'Segoe UI', Tahoma, Arial, sans-serif; }
-header { background: linear-gradient(135deg, #1a1611, #0d0d0d);
+header { background: radial-gradient(600px 220px at 0% 0%, rgba(255,122,26,.16), transparent 70%), linear-gradient(135deg, #141924, #0a0c11);
   border-bottom: 2px solid var(--ant-orange); padding: 28px 32px;
   display: flex; align-items: center; }
-header .icon { font-size: 42px; margin: 0 16px; }
+header .icon { width: 56px; height: 56px; margin: 0 16px; flex: none; }
+header .icon svg, footer svg { width: 100%; height: 100%; display: block; }
+footer svg { display: inline-block; width: 16px; height: 16px; vertical-align: -3px; }
 header h1 { margin: 0; color: var(--ant-orange); font-size: 26px; }
 header p { margin: 4px 0 0; color: var(--text-dim); font-size: 13px; }
 .summary { display: flex; flex-wrap: wrap; padding: 16px 24px 0; }
@@ -490,7 +693,7 @@ header p { margin: 4px 0 0; color: var(--text-dim); font-size: 13px; }
 .host-card { background: var(--panel); border: 1px solid var(--border);
   border-radius: 12px; margin-bottom: 18px; overflow: hidden; }
 .host-header { display: flex; justify-content: space-between; align-items: center;
-  padding: 14px 20px; background: #1c1812; border-bottom: 1px solid var(--border);
+  padding: 14px 20px; background: #141924; border-bottom: 1px solid var(--border);
   flex-wrap: wrap; }
 .host-ip { font-size: 17px; font-weight: 700; direction: ltr; unicode-bidi: isolate; }
 .badge { display: inline-block; padding: 3px 10px; border-radius: 20px;
@@ -514,7 +717,7 @@ footer { text-align: center; color: var(--text-dim); font-size: 12px; padding: 3
 </head>
 <body>
 <header>
-  <div class="icon">&#128028;</div>
+  <div class="icon">@@MARK@@</div>
   <div>
     <h1>@@TITLE@@</h1>
     <p>@@L_TARGET@@: <bdi>@@TARGET@@</bdi> &nbsp;|&nbsp; @@L_DATE@@: <bdi>@@SCAN_TIME@@</bdi> &nbsp;|&nbsp; @@L_DURATION@@: <bdi>@@DURATION@@s</bdi></p>
@@ -528,10 +731,28 @@ footer { text-align: center; color: var(--text-dim); font-size: 12px; padding: 3
 <div class="container">
 @@HOST_CARDS@@
 </div>
-<footer>&#128028; @@FOOTER@@</footer>
+<footer>@@MARK_SMALL@@ @@FOOTER@@</footer>
 </body>
 </html>
 """
+
+# The Nemla mark (see nemla_ui/web/brand/nemla-mark.svg), inlined so reports stay one file.
+BRAND_MARK = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Nemla">'
+    '<defs><linearGradient id="nm-ember@@ID@@" x1="60" y1="20" x2="200" y2="228" gradientUnits="userSpaceOnUse">'
+    '<stop offset="0" stop-color="#FFC46B"/><stop offset=".5" stop-color="#FF7A1A"/>'
+    '<stop offset="1" stop-color="#E8460C"/></linearGradient></defs>'
+    '<g fill="url(#nm-ember@@ID@@)"><ellipse cx="128" cy="62" rx="19" ry="17"/>'
+    '<ellipse cx="128" cy="109" rx="16" ry="23"/>'
+    '<path d="M128 138c22 0 34 20 34 40 0 24-14 42-34 46-20-4-34-22-34-46 0-20 12-40 34-40z"/>'
+    '<circle cx="58" cy="104" r="7"/><circle cx="48" cy="144" r="7"/><circle cx="64" cy="190" r="7"/>'
+    '<circle cx="198" cy="104" r="7"/><circle cx="208" cy="144" r="7"/><circle cx="192" cy="190" r="7"/>'
+    '<circle cx="82" cy="24" r="6"/><circle cx="174" cy="24" r="6"/></g>'
+    '<g fill="none" stroke="url(#nm-ember@@ID@@)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">'
+    '<path d="M114 98 80 80 58 104M112 110 72 114 48 144M114 124 80 148 64 190"/>'
+    '<path d="M142 98 176 80 198 104M144 110 184 114 208 144M142 124 176 148 192 190"/>'
+    '<path d="M119 50 102 28 82 24M137 50 154 28 174 24" stroke-width="5.5"/></g></svg>'
+)
 
 
 def _e(value) -> str:
@@ -586,34 +807,44 @@ def render_html(meta: dict, hosts: list) -> str:
         "L_SCANNED": _e(t("r_scanned")),
         "FOOTER": _e(t("r_footer", ver=__version__)),
         "HOST_CARDS": cards,  # already escaped piece by piece
+        "MARK": BRAND_MARK.replace("@@ID@@", "a"),  # fixed markup, no scan data
+        "MARK_SMALL": BRAND_MARK.replace("@@ID@@", "b"),
     }
-    out = HTML_TEMPLATE
-    for key, val in values.items():
-        out = out.replace(f"@@{key}@@", val)
-    return out
+    # one pass, so text that came from a scanned host can never be treated as a placeholder
+    return re.sub(r"@@([A-Z_]+)@@", lambda m: values.get(m.group(1), m.group(0)), HTML_TEMPLATE)
 
 
-def write_json(path: str, meta: dict, hosts: list) -> None:
+def json_text(meta: dict, hosts: list) -> str:
     payload = {
         "tool": "nemla", "version": __version__, "target": meta["target"],
         "scan_time": meta["scan_time"],
         "duration_seconds": round(meta["duration"], 2),
         "ports_scanned_per_host": meta["ports_scanned"], "hosts": hosts,
     }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def csv_text(hosts: list) -> str:
+    buf = io.StringIO(newline="")
+    w = csv.writer(buf)
+    w.writerow(["ip", "mac", "os_guess", "ttl", "port", "service", "banner"])
+    for h in hosts:
+        base = [h["ip"], h.get("mac") or "", h["os_guess"], h.get("ttl") or ""]
+        if not h["open_ports"]:
+            w.writerow(base + ["", "", ""])
+        for p in h["open_ports"]:
+            w.writerow(base + [p["port"], p["service"], p["banner"]])
+    return buf.getvalue()
+
+
+def write_json(path: str, meta: dict, hosts: list) -> None:
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+        f.write(json_text(meta, hosts))
 
 
 def write_csv(path: str, hosts: list) -> None:
     with open(path, "w", encoding="utf-8", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["ip", "mac", "os_guess", "ttl", "port", "service", "banner"])
-        for h in hosts:
-            base = [h["ip"], h.get("mac") or "", h["os_guess"], h.get("ttl") or ""]
-            if not h["open_ports"]:
-                w.writerow(base + ["", "", ""])
-            for p in h["open_ports"]:
-                w.writerow(base + [p["port"], p["service"], p["banner"]])
+        f.write(csv_text(hosts))
 
 
 # ---------------------------------------------------------------------------
@@ -623,10 +854,11 @@ def write_csv(path: str, hosts: list) -> None:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="nemla",
-        description="Nemla (نملة) - lightweight network reconnaissance tool",
+        description="Nemla (نملة) - lightweight network reconnaissance tool. "
+                    "Run it without arguments to open the 3D interface.",
         epilog="Only scan systems you own or have explicit permission to test.",
     )
-    p.add_argument("-t", "--target", required=True,
+    p.add_argument("-t", "--target",
                    help="IP, hostname, CIDR (10.0.0.0/24), range (10.0.0.1-50 or 10.0.0.1-10.0.0.50)")
     p.add_argument("-p", "--ports", help="ports: 22 | 22,80,443 | 1-1000")
     p.add_argument("--top-ports", action="store_true",
@@ -643,21 +875,68 @@ def build_parser() -> argparse.ArgumentParser:
                    help="TCP connect timeout in seconds (default 0.7)")
     p.add_argument("--max-hosts", type=int, default=1024,
                    help="refuse targets larger than this many addresses (default 1024)")
-    p.add_argument("--lang", choices=sorted(STRINGS), default="en",
+    p.add_argument("--lang", choices=sorted(STRINGS),
                    help="interface and report language (default en)")
     p.add_argument("--version", action="version", version=f"nemla {__version__}")
+
+    ui = p.add_argument_group("3D interface")
+    ui.add_argument("--ui", action="store_true",
+                    help="open the 3D interface (this is also what happens with no arguments)")
+    ui.add_argument("--ui-port", type=int, default=0, metavar="PORT",
+                    help="port for the local interface server (default: any free port)")
+    ui.add_argument("--no-browser", action="store_true",
+                    help="start the interface server but do not open a window")
+    ui.add_argument("--keep-alive", action="store_true",
+                    help="keep the server running after its window is closed")
+    ui.add_argument("--install-launcher", action="store_true",
+                    help="Linux: add Nemla to your applications menu (installs under ~/.local)")
+    ui.add_argument("--uninstall-launcher", action="store_true",
+                    help="Linux: remove the applications-menu entry again")
     return p
+
+
+def launch_ui(args) -> int:
+    """Start the local 3D interface (needs the nemla_ui/ folder next to this file)."""
+    try:
+        from nemla_ui import serve
+    except ImportError:
+        log("The 3D interface files (the nemla_ui/ folder) were not found next to nemla.py.")
+        return 1
+    return serve(sys.modules[__name__], port=args.ui_port, open_window=not args.no_browser,
+                 keep_alive=args.keep_alive, lang=args.lang)
+
+
+def manage_launcher(args) -> int:
+    try:
+        from nemla_ui import launcher
+    except ImportError:
+        log("The 3D interface files (the nemla_ui/ folder) were not found next to nemla.py.")
+        return 1
+    if args.install_launcher:
+        return launcher.install()
+    return launcher.uninstall()
 
 
 def main(argv=None) -> int:
     global _LANG
-    args = build_parser().parse_args(argv)
-    _LANG = args.lang
+    parser = build_parser()
+    bare = not (sys.argv[1:] if argv is None else list(argv))
+    args = parser.parse_args(argv)
+    _LANG = args.lang or "en"
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
+
+    if args.install_launcher or args.uninstall_launcher:
+        return manage_launcher(args)
+    if args.ui or bare:
+        print_banner()
+        return launch_ui(args)
+    if not args.target:
+        parser.error("the following arguments are required: -t/--target "
+                     "(or run nemla with no arguments to open the 3D interface)")
     print_banner()
 
     try:
@@ -674,49 +953,13 @@ def main(argv=None) -> int:
     if args.top_ports or not ports:
         ports |= set(TOP_PORTS)
     ports = sorted(ports)
-    threads = max(1, args.threads)
 
-    start = time.time()
-    if args.no_ping:
-        log(t("skip_discovery", n=len(ips)))
-        hosts_map = {ip: {"mac": None, "method": "skipped"} for ip in ips}
-    else:
-        probe_ports = sorted(set(DISCOVERY_PORTS) | set(ports[:15]))
-        hosts_map = discover_hosts(ips, workers=threads, probe_ports=probe_ports)
-    if not hosts_map:
-        log(t("no_hosts"))
+    hosts, meta = run_scan(
+        args.target, ips, ports, no_ping=args.no_ping, no_os=args.no_os,
+        no_banner=args.no_banner, threads=args.threads, timeout=args.timeout,
+    )
+    if not meta["discovered"]:
         return 0
-
-    log(t("port_count", n=len(ports)))
-    hosts = []
-    try:
-        for ip in sorted(hosts_map, key=lambda x: int(ipaddress.ip_address(x))):
-            log(t("scanning", ip=ip))
-            open_ports = scan_host_ports(ip, ports, threads, args.timeout,
-                                         grab=not args.no_banner)
-            ttl = None
-            if args.no_os:
-                os_guess = t("os_skipped")
-            else:
-                ttl = get_ttl(ip)
-                os_guess = guess_os(ttl, open_ports)
-                if ttl:
-                    os_guess += f" (TTL={ttl})"
-            hosts.append({
-                "ip": ip, "mac": hosts_map[ip].get("mac"),
-                "discovery": hosts_map[ip].get("method"),
-                "os_guess": os_guess, "ttl": ttl, "open_ports": open_ports,
-            })
-            log(t("host_done", n=len(open_ports), os=os_guess))
-    except KeyboardInterrupt:
-        log(t("interrupted"))
-
-    meta = {
-        "target": args.target,
-        "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "duration": time.time() - start,
-        "ports_scanned": len(ports),
-    }
     log(t("done", sec=meta["duration"]))
 
     with open(args.output, "w", encoding="utf-8") as f:
