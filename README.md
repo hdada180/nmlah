@@ -18,10 +18,10 @@ Nemla (Arabic: **نملة**, "ant") is a small, dependency-free network reconnai
 
 [nmap](https://nmap.org) is far more powerful, and you should use it for serious work. Nemla is for the moments when you want something smaller:
 
-- **Zero setup** — a single Python file, standard library only. Scapy is optional.
+- **Zero setup** — standard library only. The scanner is one Python file (`nemla.py`); the 3D interface and Guard mode live in an optional `nemla_ui/` folder next to it. Scapy is optional.
 - **A report you can actually hand to someone** — a readable dark-mode HTML page, no XML converting.
 - **Arabic and Hebrew** — `--lang ar` or `--lang he` switches the whole CLI, the report and the interface to right-to-left Arabic or Hebrew.
-- **Readable source** — one file you can read in an evening, which makes it good for learning how scanners work.
+- **Readable source** — plain Python with no frameworks. Start at `main()` and `run_scan()` in `nemla.py`; a good part of that file is translation tables. That makes it good for learning how scanners work.
 
 ## What Nemla tells you
 
@@ -69,7 +69,7 @@ python3 nemla.py            # opens the 3D interface
 - **Live.** Hosts and ports appear while the scan runs. Stop keeps the partial results.
 - **Risk at a glance.** Hosts with high or medium findings pulse rose or gold in the map, and the inspector lists every finding with its severity.
 - **Export.** HTML report, JSON or CSV from the Export button.
-- **English and Arabic**, right-to-left included.
+- **English, Arabic and Hebrew**, right-to-left included, with a language menu.
 - **Try it without scanning.** "Watch a demo colony" replays a made-up network.
 - **Standard library only.** The interface is a small local web server plus one page. There is nothing to install and it works offline.
 
