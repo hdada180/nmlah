@@ -40,8 +40,8 @@ def lab_port():
 
 
 @pytest.fixture()
-def ui():
-    app = server.App(nemla)
+def ui(tmp_path):
+    app = server.App(nemla, data_dir=tmp_path)
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(app))
     port = httpd.server_address[1]
     app.allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
@@ -308,7 +308,8 @@ def test_desktop_entry_quotes_paths_with_spaces():
     entry = launcher.desktop_entry(["/usr/bin/python3", "/home/me/my tools/nemla.py", "--ui"])
     assert 'Exec=/usr/bin/python3 "/home/me/my tools/nemla.py" --ui' in entry
     assert "Icon=nemla" in entry and "Terminal=false" in entry
-    assert "Name[ar]=نملة" in entry and "Categories=Network;Security;" in entry
+    assert "Name[ar]=نملة" in entry and "Name[he]=נמלה" in entry
+    assert "Categories=Network;Security;" in entry
     assert launcher._quote('a"b$c%') == '"a\\"b\\$c%%"'
 
 

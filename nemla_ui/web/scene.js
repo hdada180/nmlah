@@ -170,6 +170,35 @@
       if (state === 'done') n.rings.push({ t0: this.time });
     }
 
+    addAlarm(ip, severity) {
+      let n = this.nodes.get(ip);
+      if (!n) { n = this.addHost({ ip: ip }); n.alarmOnly = true; n.r = 11; }
+      n.alarm = { sev: severity, t0: this.time };
+      return n;
+    }
+
+    setHostNew(ip) {
+      const n = this.nodes.get(ip);
+      if (n) n.isNew = true;
+    }
+
+    addGhost(ip) {
+      let n = this.nodes.get(ip);
+      if (n) return n;
+      n = this.addHost({ ip: ip });
+      n.ghost = true; n.r = 8; n.state = 'gone'; n.flow = [];
+      return n;
+    }
+
+    clearAlarms() {
+      this.nodes.forEach((n) => { n.alarm = null; });
+    }
+
+    setHostRisk(ip, level) {
+      const n = this.nodes.get(ip);
+      if (n) n.risk = level === 'high' || level === 'medium' ? level : null;
+    }
+
     addPort(ip, port) {
       const n = this.nodes.get(ip);
       if (!n || n.ports.some((p) => p.port === port.port)) return;
@@ -507,12 +536,13 @@
       const seg = this.lowQuality ? 6 : 10;
       ctx.globalCompositeOperation = 'lighter';
       for (const n of this.order) {
+        if (n.ghost) continue;
         const born = clamp((T - n.born) / 0.8, 0, 1);
         if (born <= 0) continue;
         const active = n.state === 'scanning', chosen = n.ip === sel || n.ip === hov;
-        const alpha = (chosen ? 0.8 : active ? 0.55 : n.state === 'done' ? 0.2 : 0.11) * born;
-        ctx.strokeStyle = chosen ? 'rgba(255,215,160,' + alpha + ')' : 'rgba(255,122,26,' + alpha + ')';
-        ctx.lineWidth = chosen ? 2.4 : active ? 1.8 : 1.1;
+        const alpha = (n.alarm ? 0.9 : chosen ? 0.8 : active ? 0.55 : n.state === 'done' ? 0.2 : 0.11) * born;
+        ctx.strokeStyle = n.alarm ? 'rgba(255,93,143,' + alpha + ')' : chosen ? 'rgba(255,215,160,' + alpha + ')' : 'rgba(255,122,26,' + alpha + ')';
+        ctx.lineWidth = n.alarm ? 2.8 : chosen ? 2.4 : active ? 1.8 : 1.1;
         ctx.beginPath();
         let started = false;
         const upto = ease(born);
@@ -578,8 +608,15 @@
       if (r <= 0.2) return;
       if (x < -80 || x > this.w + 80 || y < -80 || y > this.h + 80) return;
       const fog = clamp(1.15 - Math.max(0, n.sz - (this.cam.dist - 250)) / 1100, 0.4, 1);
+      if (n.ghost) {
+        // a host that answered last time and did not now: only a dashed outline is left
+        ctx.globalAlpha = 0.6 * fog; ctx.strokeStyle = 'rgba(143,160,196,.85)'; ctx.lineWidth = 1.6;
+        ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(x, y, r * 1.3, 0, TAU); ctx.stroke();
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+        return;
+      }
       const chosen = n.ip === this.selectedIp || n.ip === (this.hoverIp || this._lastHover);
-      const base = n.state === 'scanning' ? COLORS.ember : n.state === 'done' ? COLORS.mint : COLORS.slate;
+      const base = n.alarm ? COLORS.rose : n.state === 'scanning' ? COLORS.ember : n.state === 'done' ? COLORS.mint : COLORS.slate;
       const beat = n.state === 'scanning' ? 1 + 0.16 * Math.sin(T * 9) : 1;
 
       const sat = this._satellites(n);
@@ -596,6 +633,32 @@
         const k = (T - rg.t0) / 1.4;
         ctx.strokeStyle = rgba(base, (1 - k) * 0.7);
         ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r * (1.2 + ease(k) * 4.5), 0, TAU); ctx.stroke();
+      }
+      if (n.risk) {
+        // a slow warning pulse: rose for high findings, gold for medium
+        const col = n.risk === 'high' ? COLORS.rose : COLORS.gold;
+        const pulse = 0.5 + 0.5 * Math.sin(T * (n.risk === 'high' ? 3.4 : 2.2) + n.idx);
+        g = r * (5.2 + pulse * 1.4); ctx.globalAlpha = (0.42 + 0.25 * pulse) * fog;
+        ctx.drawImage(glowSprite(col), x - g / 2, y - g / 2, g, g);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = rgba(col, 0.5 + 0.4 * pulse); ctx.lineWidth = 1.7;
+        ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.arc(x, y, r * 1.85 + pulse * 2.5, 0, TAU); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      if (n.isNew) {
+        const ph = (T * 0.9 + n.idx * 0.13) % 1;
+        ctx.strokeStyle = rgba(COLORS.sky, (1 - ph) * 0.75); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(x, y, r * (1.5 + ph * 3.6), 0, TAU); ctx.stroke();
+      }
+      if (n.alarm) {
+        // an intruder: shock rings roll outward from the node and a rose flare sits on it
+        for (let k = 0; k < 3; k++) {
+          const ph = (T * 0.75 + k / 3) % 1;
+          ctx.strokeStyle = rgba(COLORS.rose, (1 - ph) * 0.8); ctx.lineWidth = 2.4;
+          ctx.beginPath(); ctx.arc(x, y, r * (1.7 + ph * 7.5), 0, TAU); ctx.stroke();
+        }
+        g = r * 9; ctx.globalAlpha = 0.6 * fog; ctx.drawImage(glowSprite(COLORS.rose), x - g / 2, y - g / 2, g, g);
+        ctx.globalAlpha = 1;
       }
       ctx.globalCompositeOperation = 'source-over';
 
@@ -667,12 +730,14 @@
       ctx.font = '600 11px ' + MONO; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       const many = this.order.length > 60, hov = this.hoverIp || this._lastHover;
       for (const n of this.order) {
-        const chosen = n.ip === this.selectedIp || n.ip === hov;
+        const chosen = n.ip === this.selectedIp || n.ip === hov || !!n.alarm || !!n.ghost || !!n.isNew;
         if (!chosen && (!this.showLabels || n.sr < (many ? 11 : 4))) continue;
         if (n.sx < -40 || n.sx > this.w + 40) continue;
-        const text = n.ip, tx = n.sx + n.sr + 8, ty = n.sy - n.sr * 0.2;
+        const tag = n.alarm ? '! ' : n.ghost ? '− ' : n.isNew ? '+ ' : '';
+        const text = tag + n.ip, tx = n.sx + n.sr + 8, ty = n.sy - n.sr * 0.2;
         ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(6,8,12,.92)'; ctx.strokeText(text, tx, ty);
-        ctx.fillStyle = chosen ? '#FFFFFF' : 'rgba(225,232,247,.82)'; ctx.fillText(text, tx, ty);
+        ctx.fillStyle = n.alarm ? '#FF8FB0' : n.isNew ? '#8FDBFF' : n.ghost ? 'rgba(160,175,205,.8)' : chosen ? '#FFFFFF' : 'rgba(225,232,247,.82)';
+        ctx.fillText(text, tx, ty);
       }
     }
   }

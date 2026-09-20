@@ -29,7 +29,9 @@
     token: null, info: null, phase: 'idle', demo: false, job: null, es: null, stopDemo: null,
     hosts: new Map(), openPorts: 0, startedAt: 0, timer: null, finalSeconds: null,
     selected: null, tab: 'scan', logs: [], stage: 'discovery',
-    prog: { done: 0, total: 0, hostIndex: 0, hostTotal: 0, pdone: 0, ptotal: 0 }, focusIp: null, lostShown: false
+    prog: { done: 0, total: 0, hostIndex: 0, hostTotal: 0, pdone: 0, ptotal: 0 }, focusIp: null, lostShown: false,
+    guard: { running: false, decoys: [], failed: {}, learning: true }, guardEs: null, guardDemo: null,
+    alerts: [], alertLast: 0, diff: null
   };
 
   /* ---------------------------------------------------------------- link */
@@ -78,7 +80,10 @@
   let scene = null;
   function initScene() {
     scene = new C($('#scene'), {
-      onSelect: (ip) => { state.selected = ip; renderInspector(); renderHosts(true); updateInsets(); },
+      onSelect: (ip) => {
+        state.selected = ip; renderInspector(); renderHosts(true); updateInsets();
+        if (ip && !state.hosts.has(ip)) focusAlertFor(ip); // an intruder marker, not a scanned host
+      },
       onHover: showTip
     });
   }
@@ -125,6 +130,8 @@
   function renderStats() {
     $('#statHosts').textContent = state.hosts.size;
     $('#statPorts').textContent = state.openPorts;
+    const fc = countFindings(), sf = $('#statFindings');
+    sf.textContent = fc.n; sf.classList.toggle('hot', fc.high > 0);
     const c = $('#hostCount');
     c.textContent = state.hosts.size || ''; c.dataset.n = state.hosts.size;
     const secs = state.finalSeconds != null ? state.finalSeconds : state.startedAt ? (Date.now() - state.startedAt) / 1000 : 0;
@@ -172,6 +179,23 @@
   const hostEls = new Map();
   function portsColor(port) { return C.CATEGORIES[C.categoryOf(port)].color; }
 
+  const SEV_RANK = { high: 3, medium: 2, low: 1, info: 0 };
+  function riskOf(h) {
+    let best = null;
+    (h.findings || []).forEach((f) => {
+      if (f.severity === 'high') best = 'high';
+      else if (f.severity === 'medium' && best !== 'high') best = 'medium';
+    });
+    return best;
+  }
+  const findingText = (f) => t('find.' + f.id, Object.assign({ port: f.port }, f.params || {}));
+  function countFindings() {
+    let n = 0, high = 0;
+    state.hosts.forEach((h) => (h.findings || []).forEach((f) => { if (f.severity !== 'info') { n += 1; if (f.severity === 'high') high += 1; } }));
+    return { n, high };
+  }
+  function applyRisk(h) { scene.setHostRisk(h.ip, riskOf(h)); }
+
   function renderHosts(force) {
     const list = $('#hostList');
     const q = $('#hostFilter').value.trim().toLowerCase();
@@ -182,7 +206,7 @@
     });
     const els = hosts.map((h) => {
       let li = hostEls.get(h.ip);
-      const sig = h.state + '|' + h.open_ports.length + '|' + (h.os_guess || '') + '|' + (state.selected === h.ip) + '|' + I.lang;
+      const sig = h.state + '|' + h.open_ports.length + '|' + (h.os_guess || '') + '|' + (state.selected === h.ip) + '|' + I.lang + '|' + riskOf(h);
       if (!li) {
         li = el('li', { class: 'host', tabindex: '0', role: 'button' });
         li.addEventListener('click', () => scene.select(state.selected === h.ip ? null : h.ip));
@@ -194,6 +218,7 @@
       if (li._sig !== sig || force) {
         li._sig = sig;
         li.dataset.state = h.state;
+        li.dataset.risk = riskOf(h) || '';
         li.classList.toggle('selected', state.selected === h.ip);
         const dots = el('span', { class: 'dots' });
         h.open_ports.slice(0, 7).forEach((p) => { const i = el('i'); i.style.setProperty('--c', portsColor(p.port)); i.title = p.port + ' ' + p.service; dots.append(i); });
@@ -236,8 +261,12 @@
 
   function summary(h) {
     const lines = [h.ip + (h.os_guess ? ' - ' + h.os_guess : '')];
-    h.open_ports.forEach((p) => lines.push('  ' + p.port + '/tcp  ' + p.service + (p.banner ? '  ' + p.banner : '')));
+    h.open_ports.forEach((p) => {
+      const product = [p.product, p.version].filter(Boolean).join(' ');
+      lines.push('  ' + p.port + '/tcp  ' + p.service + (product ? '  ' + product : '') + (p.banner ? '  ' + p.banner : ''));
+    });
     if (!h.open_ports.length) lines.push('  ' + t('insp.noports'));
+    (h.findings || []).filter((f) => f.severity !== 'info').forEach((f) => lines.push('  [' + t('sev.' + f.severity) + '] ' + findingText(f)));
     return lines.join('\n');
   }
 
@@ -251,16 +280,37 @@
     badges.replaceChildren(...[h.os_guess].filter(Boolean).map((x) => el('span', { class: 'badge', text: x })));
     const kv = $('#inspKv'), rows = [];
     if (h.mac) rows.push(['insp.mac', h.mac]);
+    if (h.vendor) rows.push(['insp.vendor', h.vendor]);
     if (h.ttl) rows.push(['TTL', String(h.ttl)]);
     if (h.method) rows.push(['insp.via', h.method]);
     kv.replaceChildren(...rows.flatMap(([k, v]) => [el('dt', { text: k.startsWith('insp.') ? t(k) : k }), el('dd', { text: v })]));
     const cnt = $('#inspCount'); cnt.textContent = h.open_ports.length || ''; cnt.dataset.n = h.open_ports.length;
+
+    const finds = (h.findings || []).slice().sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity]);
+    const fl = $('#inspFindings'), fsig = h.ip + '|' + finds.length + '|' + h.state + '|' + I.lang;
+    const shown = finds.filter((f) => f.severity !== 'info').length;
+    const fcnt = $('#findCount'); fcnt.textContent = shown || ''; fcnt.dataset.n = shown;
+    if (!soft || fl._sig !== fsig) {
+      fl._sig = fsig;
+      const rows = finds.map((f) => {
+        const li = el('li', { 'data-sev': f.severity }, el('span', { class: 'sev-chip', text: t('sev.' + f.severity) }), el('span', { text: findingText(f) }));
+        return li;
+      });
+      if (!rows.length && (h.state === 'done' || state.phase !== 'running')) rows.push(el('li', { class: 'ok' }, el('span', { text: t('insp.nofindings') })));
+      fl.replaceChildren(...rows);
+    }
+
     const ul = $('#inspPorts');
     const sig = h.ip + '|' + h.open_ports.length + '|' + h.state + '|' + I.lang;
     if (!soft || ul._sig !== sig) {
       ul._sig = sig;
       const items = h.open_ports.map((p) => {
+        const product = [p.product, p.version].filter(Boolean).join(' ');
+        const tls = p.tls || {};
+        const metaBits = [p.title, tls.version && [tls.version, tls.subject, tls.not_after && ('→ ' + tls.not_after)].filter(Boolean).join(' · ')].filter(Boolean);
         const li = el('li', {}, el('div', { class: 'row' }, el('span', { class: 'pnum', text: p.port }), el('span', { class: 'psvc', text: p.service })),
+          product ? el('span', { class: 'prod', text: product }) : null,
+          metaBits.length ? el('span', { class: 'meta', text: metaBits.join(' | ') }) : null,
           el('code', { class: p.banner ? '' : 'none', text: p.banner || t('insp.nobanner') }));
         li.style.setProperty('--c', portsColor(p.port));
         return li;
@@ -281,6 +331,8 @@
     state.selected = null; state.focusIp = null; state.stage = 'discovery';
     state.prog = { done: 0, total: 0, hostIndex: 0, hostTotal: 0, pdone: 0, ptotal: 0 };
     scene.clear();
+    restoreAlarms();
+    state.diff = null; renderDiff();
     renderLog(); renderHosts(true); renderInspector();
   }
 
@@ -318,7 +370,8 @@
       }
       case 'port': {
         const h = state.hosts.get(ev.ip); if (!h || h.open_ports.some((p) => p.port === ev.port)) break;
-        h.open_ports.push({ port: ev.port, service: ev.service, banner: ev.banner }); state.openPorts += 1;
+        const rec = Object.assign({}, ev); delete rec.type; delete rec.ip;
+        h.open_ports.push(rec); state.openPorts += 1;
         scene.addPort(ev.ip, ev); dirty(); break;
       }
       case 'host_done': {
@@ -326,7 +379,7 @@
         state.openPorts += ev.host.open_ports.length - h.open_ports.length;
         Object.assign(h, ev.host, { state: 'done' });
         ev.host.open_ports.forEach((p) => scene.addPort(h.ip, p));
-        scene.setHostState(h.ip, 'done'); dirty(); break;
+        scene.setHostState(h.ip, 'done'); applyRisk(h); dirty(); break;
       }
       case 'log': addLog(ev.msg); break;
       case 'done': finish(ev); break;
@@ -342,17 +395,19 @@
       if (!h) { h = { ip: src.ip, method: src.discovery, open_ports: [] }; state.hosts.set(src.ip, h); scene.addHost(h); }
       Object.assign(h, src, { state: 'done' });
       src.open_ports.forEach((p) => scene.addPort(h.ip, p));
-      scene.setHostState(h.ip, 'done');
+      scene.setHostState(h.ip, 'done'); applyRisk(h);
     });
     state.hosts.forEach((h) => { if (h.state === 'scanning') { h.state = 'up'; scene.setHostState(h.ip, 'up'); } });
     state.openPorts = Array.from(state.hosts.values()).reduce((n, h) => n + h.open_ports.length, 0);
     state.finalSeconds = ev.meta.duration;
+    state.diff = ev.diff || null;
+    renderDiff(); applyDiffMarks();
     state.phase = ev.meta.cancelled ? 'stopped' : 'done';
     state.stage = 'ports';
     scene.setPhase('done');
     if (state.es) { state.es.close(); state.es = null; }
     renderStatus(); dirty();
-    toast(ev.meta.cancelled ? t('toast.stopped') : t('toast.done', { hosts: state.hosts.size, ports: state.openPorts }));
+    toast(ev.meta.cancelled ? t('toast.stopped') : t('toast.done', { hosts: state.hosts.size, ports: state.openPorts, findings: countFindings().n }));
   }
 
   function fail(msg) {
@@ -442,11 +497,261 @@
 
   /* ------------------------------------------------------------------- ui */
 
+  /* --------------------------------------------- what changed since last scan */
+
+  function renderDiff() {
+    const card = $('#diffCard'), d = state.diff;
+    if (!d) { card.hidden = true; return; }
+    card.hidden = false;
+    const s = d.summary || {};
+    $('#diffSub').textContent = d.against && d.against.scan_time ? t('diff.sub', { time: d.against.scan_time }) : '';
+    const chips = $('#diffChips'), list = $('#diffList');
+    list.replaceChildren();
+    if (!s.changed) { chips.replaceChildren(el('p', { class: 'diff-none', text: t('diff.none') })); return; }
+    const parts = [];
+    [['new', 'diff.chip.new', s.new_hosts], ['gone', 'diff.chip.gone', s.gone_hosts], ['opened', 'diff.chip.opened', s.opened_ports],
+      ['closed', 'diff.chip.closed', s.closed_ports], ['bad', 'diff.chip.findings', s.new_findings]].forEach(([cls, key, n]) => {
+      if (n) parts.push(el('span', { class: 'diff-chip ' + cls, text: t(key, { n }) }));
+    });
+    chips.replaceChildren(...parts);
+    const rows = [];
+    const row = (ip, text) => {
+      const li = el('li', {}, el('b', { text: ip }), document.createTextNode('  ' + text));
+      li.addEventListener('click', () => { if (state.hosts.has(ip)) scene.select(ip); });
+      rows.push(li);
+    };
+    (d.new_hosts || []).forEach((ip) => row(ip, t('diff.new_host')));
+    (d.gone_hosts || []).forEach((ip) => row(ip, t('diff.gone_host')));
+    Object.keys(d.hosts || {}).forEach((ip) => {
+      const e = d.hosts[ip];
+      e.opened.forEach((port) => row(ip, t('diff.opened', { port })));
+      e.closed.forEach((port) => row(ip, t('diff.closed', { port })));
+      e.changed.forEach((c) => row(ip, t('diff.service', { port: c.port, old: c.from, new: c.to })));
+      if (e.os) row(ip, t('diff.os', { old: e.os.from, new: e.os.to }));
+      e.new_findings.forEach((f) => row(ip, t('diff.new_finding', { sev: t('sev.' + f.severity), text: findingText(f) })));
+      e.resolved_findings.forEach((f) => row(ip, t('diff.resolved', { sev: t('sev.' + f.severity), text: findingText(f) })));
+    });
+    list.replaceChildren(...rows.slice(0, 80));
+  }
+
+  function applyDiffMarks() {
+    const d = state.diff;
+    if (!d) return;
+    (d.new_hosts || []).forEach((ip) => scene.setHostNew(ip));
+    (d.gone_hosts || []).forEach((ip) => scene.addGhost(ip));
+  }
+
   function setTab(name) {
     state.tab = name;
     $$('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
     $$('.pane').forEach((p) => { p.hidden = p.id !== 'pane-' + name; });
     if (name === 'log') renderLog();
+    if (name === 'guard') { state.alertLast = state.alerts.length; renderAlertCount(); }
+  }
+
+  /* -------------------------------------------------------------- guard */
+
+  function renderAlertCount() {
+    const unseen = state.tab === 'guard' ? 0 : state.alerts.length - state.alertLast;
+    const c = $('#alertCount');
+    c.textContent = unseen > 0 ? unseen : ''; c.dataset.n = unseen;
+    const chip = $('#guardChip');
+    chip.classList.toggle('alert', unseen > 0);
+  }
+
+  function renderGuardStatus() {
+    const g = state.guard;
+    $('#guardSwitch').checked = g.running;
+    $('#guardChip').hidden = !g.running;
+    const st = $('#guardState');
+    st.classList.toggle('on', g.running);
+    if (!g.running) st.textContent = t('guard.off');
+    else if (g.learning) st.textContent = t('guard.learning');
+    else st.textContent = t('guard.on', { n: g.decoys.length });
+    const box = $('#guardDecoys');
+    box.hidden = !g.running;
+    if (g.running) {
+      $('#decoyChips').replaceChildren(...g.decoys.map((p) => el('span', { class: 'decoy', text: String(p) })));
+      const failedPorts = Object.keys(g.failed || {});
+      $('#decoyFailed').hidden = !failedPorts.length;
+      if (failedPorts.length) $('#decoyFailed').textContent = t('guard.failed', { ports: failedPorts.join(', ') });
+    }
+  }
+
+  function alertTitle(kind, gateway) {
+    return t('guard.k.' + (kind === 'arp_change' && gateway ? 'arp_gateway' : kind));
+  }
+  function alertText(a) {
+    const d = a.detail || {};
+    let text = t('guard.t.' + (a.kind === 'arp_change' && d.gateway ? 'arp_gateway' : a.kind),
+      Object.assign({ src: a.src_ip, ip: a.src_ip, mac: a.mac }, d));
+    if (a.kind === 'new_device') {
+      if (d.vendor) text += t('guard.t.new_device_vendor', { vendor: d.vendor });
+      else if (d.local) text += t('guard.t.new_device_local');
+    }
+    return text;
+  }
+  function alertNextStep(kind) {
+    if (kind === 'tripwire') return t('guard.n.tripwire');
+    if (kind === 'new_device') return t('guard.n.new_device');
+    if (kind === 'arp_change' || kind === 'arp_dup') return t('guard.n.arp');
+    if (kind === 'baseline') return t('guard.n.baseline');
+    return '';
+  }
+  const fmtClock = (ts) => new Date(ts * 1000).toLocaleTimeString();
+
+  function flashScreen() {
+    const f = $('#flash');
+    f.classList.remove('on'); void f.offsetWidth; f.classList.add('on');
+  }
+
+  const alertEls = new Map();
+  function renderAlerts() {
+    const list = $('#alertList');
+    const rows = state.alerts.slice().reverse().map((a) => {
+      let li = alertEls.get(a.id);
+      if (!li) {
+        li = el('li', { class: 'alert', 'data-sev': a.severity });
+        const actions = el('div', { class: 'alert-actions' });
+        if (a.kind !== 'baseline' && a.src_ip) {
+          const showBtn = el('button', { type: 'button', class: 'btn', text: t('guard.act.show') });
+          showBtn.addEventListener('click', () => showOnMap(a.src_ip));
+          actions.append(showBtn);
+        }
+        if (a.kind === 'new_device' && a.mac) {
+          const trustBtn = el('button', { type: 'button', class: 'btn', text: t('guard.act.trust') });
+          trustBtn.addEventListener('click', () => trustDevice(a.mac, li));
+          actions.append(trustBtn);
+        }
+        if (a.kind !== 'baseline' && a.src_ip) {
+          const blockBtn = el('button', { type: 'button', class: 'btn danger', text: t('guard.act.block') });
+          blockBtn.addEventListener('click', () => showBlockDialog(a.src_ip));
+          actions.append(blockBtn);
+        }
+        li.append(
+          el('div', { class: 'alert-top' }, el('b', { text: alertTitle(a.kind, a.detail && a.detail.gateway) }), el('time', { text: fmtClock(a.time) })),
+          el('p', { class: 'alert-text', text: alertText(a) }),
+          el('p', { class: 'alert-next', text: alertNextStep(a.kind) }),
+          actions
+        );
+        alertEls.set(a.id, li);
+      }
+      return li;
+    });
+    list.replaceChildren(...rows);
+    $('#alertEmpty').hidden = state.alerts.length > 0;
+  }
+
+  function addAlert(a) {
+    state.alerts.push(a);
+    if (state.alerts.length > 300) { const gone = state.alerts.shift(); alertEls.delete(gone.id); }
+    if (a.severity === 'high') flashScreen();
+    if (a.src_ip && a.kind !== 'baseline') scene.addAlarm(a.src_ip, a.severity);
+    if (state.tab === 'guard') state.alertLast = state.alerts.length;
+    renderAlertCount(); renderAlerts();
+    toast(alertTitle(a.kind, a.detail && a.detail.gateway) + ': ' + alertText(a), a.severity === 'high' ? 'error' : undefined);
+  }
+
+  function focusAlertFor(ip) {
+    const a = state.alerts.slice().reverse().find((x) => x.src_ip === ip);
+    if (!a) return;
+    setTab('guard');
+    const li = alertEls.get(a.id);
+    if (li) { li.classList.add('focus'); li.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => li.classList.remove('focus'), 2200); }
+  }
+
+  function restoreAlarms() {
+    state.alerts.forEach((a) => { if (a.src_ip && a.kind !== 'baseline') scene.addAlarm(a.src_ip, a.severity); });
+  }
+
+  function showOnMap(ip) {
+    setTab('scan'); setTab('hosts');
+    if (state.hosts.has(ip)) scene.select(ip);
+    else toast(ip);
+  }
+
+  async function trustDevice(mac, li) {
+    try {
+      const res = await api('guard/trust', { method: 'POST', body: JSON.stringify({ mac }) });
+      if (res.ok) { li.querySelector('.alert-actions').replaceChildren(el('span', { class: 'badge', text: t('guard.trusted') })); toast(t('guard.trusted')); }
+    } catch (e) { /* offline: nothing more we can do here */ }
+  }
+
+  function renderBlockCommands(ip, data) {
+    const parts = t('block.title', { ip: ' ' }).split(' ');
+    $('#blockTitle').replaceChildren(document.createTextNode(parts[0] || ''), el('bdi', { text: ip }), document.createTextNode(parts[1] || ''));
+    $('#blockNote').textContent = t('block.note');
+    const body = $('#blockBody');
+    if (data.error === 'protected') { body.replaceChildren(el('p', { text: t('block.protected') })); return; }
+    if (data.error) { body.replaceChildren(el('p', { text: t('block.unsupported') })); return; }
+    body.replaceChildren(...data.options.map((opt) => {
+      const box = el('div', { class: 'cmd' }, el('b', { text: opt.name }));
+      opt.commands.forEach((cmd) => {
+        const code = el('code', { text: cmd });
+        const copyBtn = el('button', { type: 'button', class: 'btn', text: t('block.copy') });
+        copyBtn.addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(cmd); toast(t('block.copied')); } catch (e) { /* clipboard unavailable */ }
+        });
+        box.append(el('div', { class: 'line' }, code, copyBtn));
+      });
+      if (opt.undo && opt.undo.length) box.append(el('div', { class: 'undo' }, document.createTextNode(t('block.undo')), el('code', { text: opt.undo[0] })));
+      return box;
+    }));
+  }
+
+  async function showBlockDialog(ip) {
+    let data;
+    try {
+      const res = await api('guard/block?ip=' + encodeURIComponent(ip));
+      data = await res.json();
+    } catch (e) { data = { error: 'offline' }; }
+    renderBlockCommands(ip, data);
+    $('#blockDlg').showModal();
+  }
+
+  async function toggleGuard(on) {
+    if (on) {
+      try {
+        const res = await api('guard/start', { method: 'POST', body: JSON.stringify({ interval: 45 }) });
+        const data = await res.json();
+        if (!res.ok) { $('#guardSwitch').checked = false; toast(data.error || t('guard.err'), 'error'); return; }
+        Object.assign(state.guard, data);
+        attachGuardStream();
+      } catch (e) { $('#guardSwitch').checked = false; toast(t('guard.err'), 'error'); }
+    } else {
+      if (state.guardEs) { state.guardEs.close(); state.guardEs = null; }
+      if (state.guardDemo) { state.guardDemo(); state.guardDemo = null; }
+      state.guard.running = false;
+      try { await api('guard/stop', { method: 'POST' }); } catch (e) { /* best effort */ }
+    }
+    renderGuardStatus();
+  }
+
+  function attachGuardStream() {
+    if (!state.token || state.guardEs) return;
+    const es = new EventSource('/api/guard/events?k=' + encodeURIComponent(state.token));
+    state.guardEs = es;
+    es.onmessage = (m) => {
+      const a = safe(() => JSON.parse(m.data));
+      if (!a) return;
+      if (a.kind === 'baseline') state.guard.learning = false;
+      addAlert(a); renderGuardStatus();
+    };
+  }
+
+  function simulateIntrusion() {
+    const now = Date.now() / 1000;
+    let seq = state.alerts.length;
+    const make = (kind, severity, ip, mac, detail) => ({ id: ++seq + 900000, time: now, kind, severity, src_ip: ip, mac: mac || null, detail: detail || {} });
+    const script = [
+      [800, make('tripwire', 'high', '10.0.0.66', null, { count: 1, ports: (state.guard.decoys[0] ? [state.guard.decoys[0]] : [2222]), sample: 'GET /admin HTTP/1.1' })],
+      [2600, make('new_device', 'medium', '10.0.0.67', 'de:ad:be:ef:13:37', {})],
+      [4400, make('arp_change', 'high', state.info && state.info.suggested_target ? state.info.suggested_target.replace('0/24', '1') : '10.0.0.1', null,
+        { old_mac: 'a4:2b:b0:1c:9e:10', new_mac: 'de:ad:be:ef:13:37', gateway: true })]
+    ];
+    const timers = script.map(([ms, alert]) => setTimeout(() => addAlert(alert), ms));
+    state.guardDemo = () => timers.forEach(clearTimeout);
+    toast(t('guard.simulate'));
   }
 
   function toast(msg, kind) {
@@ -455,7 +760,10 @@
     setTimeout(() => node.remove(), 3700);
   }
 
-  function closeMenu() { $('#exportPop').hidden = true; $('#btnExport').setAttribute('aria-expanded', 'false'); }
+  function closeMenu() {
+    $('#exportPop').hidden = true; $('#btnExport').setAttribute('aria-expanded', 'false');
+    $('#langPop').hidden = true; $('#btnLang').setAttribute('aria-expanded', 'false');
+  }
 
   function renderLegend() {
     $('#legend').replaceChildren(...Object.keys(C.CATEGORIES).map((k) => {
@@ -466,9 +774,13 @@
 
   function applyLang(lang) {
     I.setLang(lang);
-    $('#btnLang').textContent = t('lang.switch');
-    $('#btnLang').lang = lang === 'ar' ? 'en' : 'ar';
+    $('#langCur').textContent = I.names[I.lang];
+    $$('#langPop a').forEach((a) => a.setAttribute('aria-current', String(a.dataset.lang === I.lang)));
+    // the local-language brand name is Arabic for English and Arabic, Hebrew for Hebrew
+    $$('.brand-ar, .ar-name').forEach((n) => { n.lang = I.lang === 'he' ? 'he' : 'ar'; });
     renderLegend(); renderStatus(); renderStats(); renderHosts(true); renderInspector(); renderLog(); updateInsets();
+    renderGuardStatus(); alertEls.forEach((li, id) => { alertEls.delete(id); }); renderAlerts(); renderAlertCount();
+    renderDiff();
   }
 
   function applyInfo() {
@@ -482,6 +794,13 @@
     $('#quickSub').dataset.i18nVars = JSON.stringify({ n: info.top_ports });
     if (!$('#target').value) $('#target').value = info.suggested_target;
     I.apply(document);
+    if (info.guard) {
+      Object.assign(state.guard, info.guard);
+      renderGuardStatus();
+      if (info.guard.running) attachGuardStream();
+    } else if (info.guard_ports) {
+      state.guard.decoys = info.guard_ports;
+    }
   }
 
   function bindUI() {
@@ -496,7 +815,13 @@
       $('#ports').hidden = !custom; if (custom) $('#ports').focus();
     }));
     $('#hostFilter').addEventListener('input', () => renderHosts(true));
-    $('#btnLang').addEventListener('click', () => applyLang(I.lang === 'ar' ? 'en' : 'ar'));
+    $('#btnLang').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const pop = $('#langPop'), open = pop.hidden;
+      closeMenu(); pop.hidden = !open;
+      $('#btnLang').setAttribute('aria-expanded', String(open));
+    });
+    $$('#langPop a').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); closeMenu(); applyLang(a.dataset.lang); }));
     $('#btnLabels').addEventListener('click', (e) => {
       const on = e.currentTarget.getAttribute('aria-pressed') !== 'true';
       e.currentTarget.setAttribute('aria-pressed', String(on)); scene.setLabels(on);
@@ -513,17 +838,23 @@
     });
     $('#btnExport').addEventListener('click', (e) => {
       e.stopPropagation();
-      const pop = $('#exportPop'); pop.hidden = !pop.hidden;
-      $('#btnExport').setAttribute('aria-expanded', String(!pop.hidden));
+      const pop = $('#exportPop'), open = pop.hidden;
+      closeMenu(); pop.hidden = !open;
+      $('#btnExport').setAttribute('aria-expanded', String(open));
     });
     $$('#exportPop a').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); download(a.dataset.fmt); }));
-    document.addEventListener('click', (e) => { if (!e.target.closest('#exportMenu')) closeMenu(); });
+    document.addEventListener('click', (e) => { if (!e.target.closest('#exportMenu, #langMenu')) closeMenu(); });
     document.addEventListener('keydown', (e) => {
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '');
       if (e.key === 'Escape') { closeMenu(); if (state.selected) scene.select(null); }
       else if (e.key === '/' && !typing) { e.preventDefault(); setTab('scan'); $('#target').focus(); }
     });
     $('#brand').addEventListener('click', (e) => { e.preventDefault(); scene.select(null); scene.resetView(); });
+    $('#guardSwitch').addEventListener('change', (e) => toggleGuard(e.target.checked));
+    $('#guardChip').addEventListener('click', () => setTab('guard'));
+    $('#btnSimulate').addEventListener('click', simulateIntrusion);
+    $('#blockClose').addEventListener('click', () => $('#blockDlg').close());
+    $('#diffClose').addEventListener('click', () => { state.diff = null; renderDiff(); });
     window.addEventListener('resize', updateInsets);
     new ResizeObserver(updateInsets).observe($('#dock'));
 
