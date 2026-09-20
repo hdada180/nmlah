@@ -85,6 +85,10 @@ Notes: decoy ports above 1024 need no special rights, and nothing in Guard needs
 
 Run Nemla with no arguments and it opens its own window: a 3D map of your network, a scan form, a live host list and a host inspector. It is the same scanner as the command line, just easier to work with.
 
+![The Nemla 3D interface showing the demo colony](docs/ui-3d.png)
+
+> The screenshot is the built-in demo colony (made-up hosts). New hosts pulse blue, the dashed circle on the left is a host that vanished, and the card on the left lists what changed since the previous scan.
+
 ```bash
 python3 nemla.py            # opens the 3D interface
 ```

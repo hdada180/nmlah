@@ -6,17 +6,19 @@
 <title>Nemla Recon Report - 127.0.0.1</title>
 <style>
 :root {
-  --bg: #0d0d0d; --panel: #171512; --ant-orange: #ff8c00;
-  --ant-orange-dim: #b35f00; --text: #eee8dc; --text-dim: #9a9184;
-  --border: #2a251f; --up: #6fcf6f;
+  --bg: #0a0c11; --panel: #10141c; --ant-orange: #ff7a1a;
+  --ant-orange-dim: #b84400; --text: #eef0f6; --text-dim: #a2abbe;
+  --border: #232a3b; --up: #3ee6b4;
 }
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--text); margin: 0; padding: 0 0 60px;
   font-family: 'Segoe UI', Tahoma, Arial, sans-serif; }
-header { background: linear-gradient(135deg, #1a1611, #0d0d0d);
+header { background: radial-gradient(600px 220px at 0% 0%, rgba(255,122,26,.16), transparent 70%), linear-gradient(135deg, #141924, #0a0c11);
   border-bottom: 2px solid var(--ant-orange); padding: 28px 32px;
   display: flex; align-items: center; }
-header .icon { font-size: 42px; margin: 0 16px; }
+header .icon { width: 56px; height: 56px; margin: 0 16px; flex: none; }
+header .icon svg, footer svg { width: 100%; height: 100%; display: block; }
+footer svg { display: inline-block; width: 16px; height: 16px; vertical-align: -3px; }
 header h1 { margin: 0; color: var(--ant-orange); font-size: 26px; }
 header p { margin: 4px 0 0; color: var(--text-dim); font-size: 13px; }
 .summary { display: flex; flex-wrap: wrap; padding: 16px 24px 0; }
@@ -28,7 +30,7 @@ header p { margin: 4px 0 0; color: var(--text-dim); font-size: 13px; }
 .host-card { background: var(--panel); border: 1px solid var(--border);
   border-radius: 12px; margin-bottom: 18px; overflow: hidden; }
 .host-header { display: flex; justify-content: space-between; align-items: center;
-  padding: 14px 20px; background: #1c1812; border-bottom: 1px solid var(--border);
+  padding: 14px 20px; background: #141924; border-bottom: 1px solid var(--border);
   flex-wrap: wrap; }
 .host-ip { font-size: 17px; font-weight: 700; direction: ltr; unicode-bidi: isolate; }
 .badge { display: inline-block; padding: 3px 10px; border-radius: 20px;
@@ -47,29 +49,43 @@ tr:last-child td { border-bottom: none; }
 .banner { color: var(--text-dim); font-family: monospace; font-size: 11px;
   word-break: break-all; direction: ltr; unicode-bidi: isolate; text-align: left; }
 .empty { padding: 16px 20px; color: var(--text-dim); font-size: 13px; }
+.stat.warn .num { color: #ff5d8f; }
+.product small { display: block; color: var(--text-dim); font-size: 11px; margin-top: 2px; }
+.findings { list-style: none; margin: 0; padding: 14px 20px 16px; border-top: 1px solid var(--border);
+  display: grid; gap: 8px; }
+.findings li { display: flex; gap: 12px; align-items: baseline; font-size: 13px; }
+.sev { flex: none; min-width: 70px; text-align: center; padding: 2px 8px; border-radius: 6px;
+  font-size: 11px; font-weight: 700; }
+.sev-high .sev { background: rgba(255,93,143,.18); color: #ff5d8f; border: 1px solid rgba(255,93,143,.5); }
+.sev-medium .sev { background: rgba(255,194,71,.16); color: #ffc247; border: 1px solid rgba(255,194,71,.5); }
+.sev-low .sev { background: rgba(76,194,255,.14); color: #4cc2ff; border: 1px solid rgba(76,194,255,.45); }
+.sev-info .sev { background: rgba(143,160,196,.14); color: #8fa0c4; border: 1px solid rgba(143,160,196,.4); }
+.sev-info { color: var(--text-dim); }
 footer { text-align: center; color: var(--text-dim); font-size: 12px; padding: 30px; }
 </style>
 </head>
 <body>
 <header>
-  <div class="icon">&#128028;</div>
+  <div class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Nemla"><defs><linearGradient id="nm-embera" x1="60" y1="20" x2="200" y2="228" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFC46B"/><stop offset=".5" stop-color="#FF7A1A"/><stop offset="1" stop-color="#E8460C"/></linearGradient></defs><g fill="url(#nm-embera)"><ellipse cx="128" cy="62" rx="19" ry="17"/><ellipse cx="128" cy="109" rx="16" ry="23"/><path d="M128 138c22 0 34 20 34 40 0 24-14 42-34 46-20-4-34-22-34-46 0-20 12-40 34-40z"/><circle cx="58" cy="104" r="7"/><circle cx="48" cy="144" r="7"/><circle cx="64" cy="190" r="7"/><circle cx="198" cy="104" r="7"/><circle cx="208" cy="144" r="7"/><circle cx="192" cy="190" r="7"/><circle cx="82" cy="24" r="6"/><circle cx="174" cy="24" r="6"/></g><g fill="none" stroke="url(#nm-embera)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M114 98 80 80 58 104M112 110 72 114 48 144M114 124 80 148 64 190"/><path d="M142 98 176 80 198 104M144 110 184 114 208 144M142 124 176 148 192 190"/><path d="M119 50 102 28 82 24M137 50 154 28 174 24" stroke-width="5.5"/></g></svg></div>
   <div>
     <h1>Nemla Recon Report</h1>
-    <p>Target: <bdi>127.0.0.1</bdi> &nbsp;|&nbsp; Scan date: <bdi>2026-09-20 10:49:20</bdi> &nbsp;|&nbsp; Duration: <bdi>0.5s</bdi></p>
+    <p>Target: <bdi>127.0.0.1</bdi> &nbsp;|&nbsp; Scan date: <bdi>2026-09-21 02:23:51</bdi> &nbsp;|&nbsp; Duration: <bdi>0.5s</bdi></p>
   </div>
 </header>
 <div class="summary">
   <div class="stat"><div class="num">1</div><div class="label">Hosts discovered</div></div>
-  <div class="stat"><div class="num">5</div><div class="label">Open ports</div></div>
-  <div class="stat"><div class="num">38</div><div class="label">Ports scanned per host</div></div>
+  <div class="stat"><div class="num">6</div><div class="label">Open ports</div></div>
+  <div class="stat"><div class="num">6</div><div class="label">Ports scanned per host</div></div>
+  <div class="stat "><div class="num">2</div><div class="label">Findings</div></div>
 </div>
 <div class="container">
-<div class="host-card"><div class="host-header"><div><span class="host-ip">127.0.0.1</span><span class="badge up">Active</span><span class="badge os">Unknown</span></div><div class="host-meta"></div></div><div class="table-wrap"><table><tr><th>Port</th><th>Service</th><th>Banner</th></tr><tr><td class="port">21</td><td>FTP</td><td class="banner">220 (vsFTPd 3.0.5)</td></tr>
-<tr><td class="port">22</td><td>SSH</td><td class="banner">SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13</td></tr>
-<tr><td class="port">25</td><td>SMTP</td><td class="banner">220 mail.lab.local ESMTP Postfix (Ubuntu)</td></tr>
-<tr><td class="port">80</td><td>HTTP</td><td class="banner">HTTP/1.0 200 OK | Server: nginx/1.24.0</td></tr>
-<tr><td class="port">8080</td><td>HTTP-Proxy</td><td class="banner">HTTP/1.0 200 OK | Server: nginx/1.24.0</td></tr></table></div></div>
+<div class="host-card"><div class="host-header"><div><span class="host-ip">127.0.0.1</span><span class="badge up">Active</span><span class="badge os">Skipped</span></div><div class="host-meta"></div></div><div class="table-wrap"><table><tr><th>Port</th><th>Service</th><th>Product</th><th>Banner</th></tr><tr><td class="port">21</td><td>FTP</td><td class="product">vsftpd 3.0.5</td><td class="banner">220 (vsFTPd 3.0.5)</td></tr>
+<tr><td class="port">22</td><td>SSH</td><td class="product">OpenSSH 9.6p1</td><td class="banner">SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13</td></tr>
+<tr><td class="port">25</td><td>SMTP</td><td class="product">Postfix</td><td class="banner">220 mail.lab.local ESMTP Postfix (Ubuntu)</td></tr>
+<tr><td class="port">80</td><td>HTTP</td><td class="product">nginx 1.24.0<small>Nemla Lab</small></td><td class="banner">HTTP/1.1 200 OK | Server: nginx/1.24.0</td></tr>
+<tr><td class="port">443</td><td>HTTPS</td><td class="product">nginx 1.24.0<small>Nemla Lab | TLSv1.3 lab.nemla.test -&gt; 2027-10-25</small></td><td class="banner">-</td></tr>
+<tr><td class="port">8080</td><td>HTTP-Proxy</td><td class="product">nginx 1.24.0<small>Nemla Lab</small></td><td class="banner">HTTP/1.1 200 OK | Server: nginx/1.24.0</td></tr></table></div><ul class="findings"><li class="sev-medium"><span class="sev">Medium</span><span>FTP is open on port 21: passwords are sent in clear text.</span></li><li class="sev-low"><span class="sev">Low</span><span>The TLS certificate on port 443 is self-signed.</span></li><li class="sev-info"><span class="sev">Info</span><span>vsftpd 3.0.5 on port 21 announces its exact version to anyone who connects.</span></li><li class="sev-info"><span class="sev">Info</span><span>OpenSSH 9.6p1 on port 22 announces its exact version to anyone who connects.</span></li><li class="sev-info"><span class="sev">Info</span><span>nginx 1.24.0 on port 80 announces its exact version to anyone who connects.</span></li><li class="sev-info"><span class="sev">Info</span><span>nginx 1.24.0 on port 443 announces its exact version to anyone who connects.</span></li><li class="sev-info"><span class="sev">Info</span><span>nginx 1.24.0 on port 8080 announces its exact version to anyone who connects.</span></li></ul></div>
 </div>
-<footer>&#128028; Generated by Nemla v1.1.0 - responsible use only, on networks you are authorized to scan</footer>
+<footer><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Nemla"><defs><linearGradient id="nm-emberb" x1="60" y1="20" x2="200" y2="228" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFC46B"/><stop offset=".5" stop-color="#FF7A1A"/><stop offset="1" stop-color="#E8460C"/></linearGradient></defs><g fill="url(#nm-emberb)"><ellipse cx="128" cy="62" rx="19" ry="17"/><ellipse cx="128" cy="109" rx="16" ry="23"/><path d="M128 138c22 0 34 20 34 40 0 24-14 42-34 46-20-4-34-22-34-46 0-20 12-40 34-40z"/><circle cx="58" cy="104" r="7"/><circle cx="48" cy="144" r="7"/><circle cx="64" cy="190" r="7"/><circle cx="198" cy="104" r="7"/><circle cx="208" cy="144" r="7"/><circle cx="192" cy="190" r="7"/><circle cx="82" cy="24" r="6"/><circle cx="174" cy="24" r="6"/></g><g fill="none" stroke="url(#nm-emberb)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M114 98 80 80 58 104M112 110 72 114 48 144M114 124 80 148 64 190"/><path d="M142 98 176 80 198 104M144 110 184 114 208 144M142 124 176 148 192 190"/><path d="M119 50 102 28 82 24M137 50 154 28 174 24" stroke-width="5.5"/></g></svg> Generated by Nemla v1.2.0 - responsible use only, on networks you are authorized to scan</footer>
 </body>
 </html>
