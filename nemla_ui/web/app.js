@@ -29,7 +29,9 @@
     token: null, info: null, phase: 'idle', demo: false, job: null, es: null, stopDemo: null,
     hosts: new Map(), openPorts: 0, startedAt: 0, timer: null, finalSeconds: null,
     selected: null, tab: 'scan', logs: [], stage: 'discovery',
-    prog: { done: 0, total: 0, hostIndex: 0, hostTotal: 0, pdone: 0, ptotal: 0 }, focusIp: null, lostShown: false
+    prog: { done: 0, total: 0, hostIndex: 0, hostTotal: 0, pdone: 0, ptotal: 0 }, focusIp: null, lostShown: false,
+    guard: { running: false, decoys: [], failed: {}, learning: true }, guardEs: null, guardDemo: null,
+    alerts: [], alertLast: 0
   };
 
   /* ---------------------------------------------------------------- link */
@@ -78,7 +80,10 @@
   let scene = null;
   function initScene() {
     scene = new C($('#scene'), {
-      onSelect: (ip) => { state.selected = ip; renderInspector(); renderHosts(true); updateInsets(); },
+      onSelect: (ip) => {
+        state.selected = ip; renderInspector(); renderHosts(true); updateInsets();
+        if (ip && !state.hosts.has(ip)) focusAlertFor(ip); // an intruder marker, not a scanned host
+      },
       onHover: showTip
     });
   }
@@ -325,6 +330,7 @@
     state.selected = null; state.focusIp = null; state.stage = 'discovery';
     state.prog = { done: 0, total: 0, hostIndex: 0, hostTotal: 0, pdone: 0, ptotal: 0 };
     scene.clear();
+    restoreAlarms();
     renderLog(); renderHosts(true); renderInspector();
   }
 
@@ -492,6 +498,206 @@
     $$('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
     $$('.pane').forEach((p) => { p.hidden = p.id !== 'pane-' + name; });
     if (name === 'log') renderLog();
+    if (name === 'guard') { state.alertLast = state.alerts.length; renderAlertCount(); }
+  }
+
+  /* -------------------------------------------------------------- guard */
+
+  function renderAlertCount() {
+    const unseen = state.tab === 'guard' ? 0 : state.alerts.length - state.alertLast;
+    const c = $('#alertCount');
+    c.textContent = unseen > 0 ? unseen : ''; c.dataset.n = unseen;
+    const chip = $('#guardChip');
+    chip.classList.toggle('alert', unseen > 0);
+  }
+
+  function renderGuardStatus() {
+    const g = state.guard;
+    $('#guardSwitch').checked = g.running;
+    $('#guardChip').hidden = !g.running;
+    const st = $('#guardState');
+    st.classList.toggle('on', g.running);
+    if (!g.running) st.textContent = t('guard.off');
+    else if (g.learning) st.textContent = t('guard.learning');
+    else st.textContent = t('guard.on', { n: g.decoys.length });
+    const box = $('#guardDecoys');
+    box.hidden = !g.running;
+    if (g.running) {
+      $('#decoyChips').replaceChildren(...g.decoys.map((p) => el('span', { class: 'decoy', text: String(p) })));
+      const failedPorts = Object.keys(g.failed || {});
+      $('#decoyFailed').hidden = !failedPorts.length;
+      if (failedPorts.length) $('#decoyFailed').textContent = t('guard.failed', { ports: failedPorts.join(', ') });
+    }
+  }
+
+  function alertTitle(kind, gateway) {
+    return t('guard.k.' + (kind === 'arp_change' && gateway ? 'arp_gateway' : kind));
+  }
+  function alertText(a) {
+    return t('guard.t.' + (a.kind === 'arp_change' && a.detail.gateway ? 'arp_gateway' : a.kind),
+      Object.assign({ src: a.src_ip, ip: a.src_ip, mac: a.mac }, a.detail || {}));
+  }
+  function alertNextStep(kind) {
+    if (kind === 'tripwire') return t('guard.n.tripwire');
+    if (kind === 'new_device') return t('guard.n.new_device');
+    if (kind === 'arp_change' || kind === 'arp_dup') return t('guard.n.arp');
+    if (kind === 'baseline') return t('guard.n.baseline');
+    return '';
+  }
+  const fmtClock = (ts) => new Date(ts * 1000).toLocaleTimeString();
+
+  function flashScreen() {
+    const f = $('#flash');
+    f.classList.remove('on'); void f.offsetWidth; f.classList.add('on');
+  }
+
+  const alertEls = new Map();
+  function renderAlerts() {
+    const list = $('#alertList');
+    const rows = state.alerts.slice().reverse().map((a) => {
+      let li = alertEls.get(a.id);
+      if (!li) {
+        li = el('li', { class: 'alert', 'data-sev': a.severity });
+        const actions = el('div', { class: 'alert-actions' });
+        if (a.kind !== 'baseline' && a.src_ip) {
+          const showBtn = el('button', { type: 'button', class: 'btn', text: t('guard.act.show') });
+          showBtn.addEventListener('click', () => showOnMap(a.src_ip));
+          actions.append(showBtn);
+        }
+        if (a.kind === 'new_device' && a.mac) {
+          const trustBtn = el('button', { type: 'button', class: 'btn', text: t('guard.act.trust') });
+          trustBtn.addEventListener('click', () => trustDevice(a.mac, li));
+          actions.append(trustBtn);
+        }
+        if (a.kind !== 'baseline' && a.src_ip) {
+          const blockBtn = el('button', { type: 'button', class: 'btn danger', text: t('guard.act.block') });
+          blockBtn.addEventListener('click', () => showBlockDialog(a.src_ip));
+          actions.append(blockBtn);
+        }
+        li.append(
+          el('div', { class: 'alert-top' }, el('b', { text: alertTitle(a.kind, a.detail && a.detail.gateway) }), el('time', { text: fmtClock(a.time) })),
+          el('p', { class: 'alert-text', text: alertText(a) }),
+          el('p', { class: 'alert-next', text: alertNextStep(a.kind) }),
+          actions
+        );
+        alertEls.set(a.id, li);
+      }
+      return li;
+    });
+    list.replaceChildren(...rows);
+    $('#alertEmpty').hidden = state.alerts.length > 0;
+  }
+
+  function addAlert(a) {
+    state.alerts.push(a);
+    if (state.alerts.length > 300) { const gone = state.alerts.shift(); alertEls.delete(gone.id); }
+    if (a.severity === 'high') flashScreen();
+    if (a.src_ip && a.kind !== 'baseline') scene.addAlarm(a.src_ip, a.severity);
+    if (state.tab === 'guard') state.alertLast = state.alerts.length;
+    renderAlertCount(); renderAlerts();
+    toast(alertTitle(a.kind, a.detail && a.detail.gateway) + ': ' + alertText(a), a.severity === 'high' ? 'error' : undefined);
+  }
+
+  function focusAlertFor(ip) {
+    const a = state.alerts.slice().reverse().find((x) => x.src_ip === ip);
+    if (!a) return;
+    setTab('guard');
+    const li = alertEls.get(a.id);
+    if (li) { li.classList.add('focus'); li.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => li.classList.remove('focus'), 2200); }
+  }
+
+  function restoreAlarms() {
+    state.alerts.forEach((a) => { if (a.src_ip && a.kind !== 'baseline') scene.addAlarm(a.src_ip, a.severity); });
+  }
+
+  function showOnMap(ip) {
+    setTab('scan'); setTab('hosts');
+    if (state.hosts.has(ip)) scene.select(ip);
+    else toast(ip);
+  }
+
+  async function trustDevice(mac, li) {
+    try {
+      const res = await api('guard/trust', { method: 'POST', body: JSON.stringify({ mac }) });
+      if (res.ok) { li.querySelector('.alert-actions').replaceChildren(el('span', { class: 'badge', text: t('guard.trusted') })); toast(t('guard.trusted')); }
+    } catch (e) { /* offline: nothing more we can do here */ }
+  }
+
+  function renderBlockCommands(ip, data) {
+    const parts = t('block.title', { ip: ' ' }).split(' ');
+    $('#blockTitle').replaceChildren(document.createTextNode(parts[0] || ''), el('bdi', { text: ip }), document.createTextNode(parts[1] || ''));
+    $('#blockNote').textContent = t('block.note');
+    const body = $('#blockBody');
+    if (data.error === 'protected') { body.replaceChildren(el('p', { text: t('block.protected') })); return; }
+    if (data.error) { body.replaceChildren(el('p', { text: t('block.unsupported') })); return; }
+    body.replaceChildren(...data.options.map((opt) => {
+      const box = el('div', { class: 'cmd' }, el('b', { text: opt.name }));
+      opt.commands.forEach((cmd) => {
+        const code = el('code', { text: cmd });
+        const copyBtn = el('button', { type: 'button', class: 'btn', text: t('block.copy') });
+        copyBtn.addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(cmd); toast(t('block.copied')); } catch (e) { /* clipboard unavailable */ }
+        });
+        box.append(el('div', { class: 'line' }, code, copyBtn));
+      });
+      if (opt.undo && opt.undo.length) box.append(el('div', { class: 'undo' }, document.createTextNode(t('block.undo')), el('code', { text: opt.undo[0] })));
+      return box;
+    }));
+  }
+
+  async function showBlockDialog(ip) {
+    let data;
+    try {
+      const res = await api('guard/block?ip=' + encodeURIComponent(ip));
+      data = await res.json();
+    } catch (e) { data = { error: 'offline' }; }
+    renderBlockCommands(ip, data);
+    $('#blockDlg').showModal();
+  }
+
+  async function toggleGuard(on) {
+    if (on) {
+      try {
+        const res = await api('guard/start', { method: 'POST', body: JSON.stringify({ interval: 45 }) });
+        const data = await res.json();
+        if (!res.ok) { $('#guardSwitch').checked = false; toast(data.error || t('guard.err'), 'error'); return; }
+        Object.assign(state.guard, data);
+        attachGuardStream();
+      } catch (e) { $('#guardSwitch').checked = false; toast(t('guard.err'), 'error'); }
+    } else {
+      if (state.guardEs) { state.guardEs.close(); state.guardEs = null; }
+      if (state.guardDemo) { state.guardDemo(); state.guardDemo = null; }
+      state.guard.running = false;
+      try { await api('guard/stop', { method: 'POST' }); } catch (e) { /* best effort */ }
+    }
+    renderGuardStatus();
+  }
+
+  function attachGuardStream() {
+    if (!state.token || state.guardEs) return;
+    const es = new EventSource('/api/guard/events?k=' + encodeURIComponent(state.token));
+    state.guardEs = es;
+    es.onmessage = (m) => {
+      const a = safe(() => JSON.parse(m.data));
+      if (!a) return;
+      if (a.kind === 'baseline') state.guard.learning = false;
+      addAlert(a); renderGuardStatus();
+    };
+  }
+
+  function simulateIntrusion() {
+    const now = Date.now() / 1000;
+    let seq = state.alerts.length;
+    const make = (kind, severity, ip, mac, detail) => ({ id: ++seq + 900000, time: now, kind, severity, src_ip: ip, mac: mac || null, detail: detail || {} });
+    const script = [
+      [800, make('tripwire', 'high', '10.0.0.66', null, { count: 1, ports: (state.guard.decoys[0] ? [state.guard.decoys[0]] : [2222]), sample: 'GET /admin HTTP/1.1' })],
+      [2600, make('new_device', 'medium', '10.0.0.67', 'de:ad:be:ef:13:37', {})],
+      [4400, make('arp_change', 'high', state.info && state.info.suggested_target ? state.info.suggested_target.replace('0/24', '1') : '10.0.0.1', null,
+        { old_mac: 'a4:2b:b0:1c:9e:10', new_mac: 'de:ad:be:ef:13:37', gateway: true })]
+    ];
+    const timers = script.map(([ms, alert]) => setTimeout(() => addAlert(alert), ms));
+    state.guardDemo = () => timers.forEach(clearTimeout);
+    toast(t('guard.simulate'));
   }
 
   function toast(msg, kind) {
@@ -519,6 +725,7 @@
     // the local-language brand name is Arabic for English and Arabic, Hebrew for Hebrew
     $$('.brand-ar, .ar-name').forEach((n) => { n.lang = I.lang === 'he' ? 'he' : 'ar'; });
     renderLegend(); renderStatus(); renderStats(); renderHosts(true); renderInspector(); renderLog(); updateInsets();
+    renderGuardStatus(); alertEls.forEach((li, id) => { alertEls.delete(id); }); renderAlerts(); renderAlertCount();
   }
 
   function applyInfo() {
@@ -532,6 +739,13 @@
     $('#quickSub').dataset.i18nVars = JSON.stringify({ n: info.top_ports });
     if (!$('#target').value) $('#target').value = info.suggested_target;
     I.apply(document);
+    if (info.guard) {
+      Object.assign(state.guard, info.guard);
+      renderGuardStatus();
+      if (info.guard.running) attachGuardStream();
+    } else if (info.guard_ports) {
+      state.guard.decoys = info.guard_ports;
+    }
   }
 
   function bindUI() {
@@ -581,6 +795,10 @@
       else if (e.key === '/' && !typing) { e.preventDefault(); setTab('scan'); $('#target').focus(); }
     });
     $('#brand').addEventListener('click', (e) => { e.preventDefault(); scene.select(null); scene.resetView(); });
+    $('#guardSwitch').addEventListener('change', (e) => toggleGuard(e.target.checked));
+    $('#guardChip').addEventListener('click', () => setTab('guard'));
+    $('#btnSimulate').addEventListener('click', simulateIntrusion);
+    $('#blockClose').addEventListener('click', () => $('#blockDlg').close());
     window.addEventListener('resize', updateInsets);
     new ResizeObserver(updateInsets).observe($('#dock'));
 

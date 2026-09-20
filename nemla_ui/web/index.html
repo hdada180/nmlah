@@ -26,6 +26,7 @@
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19.5h14"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6z"/><path d="m9 12 2 2 4-4"/></symbol>
   <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
 </svg>
 
@@ -45,6 +46,7 @@
     </div>
 
     <div class="top-actions">
+      <button class="chip guard-chip" id="guardChip" hidden><i></i><span data-i18n="guard.chip">Guard on</span></button>
       <span class="chip" id="modeChip" data-i18n="mode.standard">Standard mode</span>
       <button class="icon-btn" id="btnLabels" aria-pressed="true" data-i18n-title="top.labels" data-i18n-aria="top.labels"><svg><use href="#i-tag"/></svg></button>
       <button class="icon-btn" id="btnReset" data-i18n-title="top.reset" data-i18n-aria="top.reset"><svg><use href="#i-reset"/></svg></button>
@@ -76,6 +78,7 @@
       <button role="tab" data-tab="scan" aria-selected="true"><svg><use href="#i-radar"/></svg><span data-i18n="tab.scan">Scan</span></button>
       <button role="tab" data-tab="hosts" aria-selected="false"><svg><use href="#i-nodes"/></svg><span data-i18n="tab.hosts">Hosts</span><b class="count" id="hostCount" data-n="0"></b></button>
       <button role="tab" data-tab="log" aria-selected="false"><svg><use href="#i-terminal"/></svg><span data-i18n="tab.log">Trail</span></button>
+      <button role="tab" data-tab="guard" aria-selected="false"><svg><use href="#i-shield"/></svg><span data-i18n="tab.guard">Guard</span><b class="count alarm" id="alertCount" data-n="0"></b></button>
     </nav>
 
     <section class="pane" id="pane-scan" role="tabpanel">
@@ -136,6 +139,27 @@
       <ul class="log-list" id="logList"></ul>
       <p class="empty" id="logEmpty" data-i18n="log.empty">The trail will show what Nemla is doing.</p>
     </section>
+
+    <section class="pane" id="pane-guard" role="tabpanel" hidden>
+      <div class="guard-head">
+        <div>
+          <h2 data-i18n="guard.title">Guard mode</h2>
+          <p class="guard-state" id="guardState" data-i18n="guard.off">Off</p>
+        </div>
+        <label class="switch big"><span class="sr" data-i18n="guard.title">Guard mode</span><input type="checkbox" id="guardSwitch"><span class="track"></span></label>
+      </div>
+      <p class="guard-explain" data-i18n="guard.explain">Guard watches for suspicious activity.</p>
+      <div class="decoys" id="guardDecoys" hidden>
+        <span class="label" data-i18n="guard.decoys">Decoy ports</span>
+        <div class="chips" id="decoyChips"></div>
+        <p class="form-error" id="decoyFailed" hidden></p>
+      </div>
+      <p class="guard-window" data-i18n="guard.window">Guard works while Nemla is open.</p>
+      <button type="button" class="btn ghost-btn" id="btnSimulate"><svg><use href="#i-shield"/></svg><span data-i18n="guard.simulate">Simulate an intruder (demo)</span></button>
+      <h3 class="sub"><span data-i18n="guard.alerts">Alerts</span></h3>
+      <ul class="alert-list" id="alertList"></ul>
+      <p class="empty" id="alertEmpty" data-i18n="guard.noalerts">No alerts.</p>
+    </section>
   </aside>
 
   <aside class="panel inspector" id="inspector" data-tilt hidden aria-live="polite">
@@ -183,6 +207,15 @@
     <button class="btn" id="consentCancel" data-i18n="consent.cancel">Cancel</button>
     <button class="btn primary" id="consentOk" disabled data-i18n="consent.ok">Continue</button>
   </div>
+</dialog>
+
+<div class="flash" id="flash" aria-hidden="true"></div>
+
+<dialog id="blockDlg">
+  <h2 id="blockTitle"></h2>
+  <p id="blockNote"></p>
+  <div id="blockBody"></div>
+  <div class="dialog-actions"><button class="btn" id="blockClose" data-i18n="block.close">Close</button></div>
 </dialog>
 
 <div class="overlay" id="lost" hidden>

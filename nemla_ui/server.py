@@ -22,6 +22,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+from . import guard as guard_mod
+
 WEB_DIR = Path(__file__).resolve().parent / "web"
 MAX_BODY = 64 * 1024
 MAX_HOSTS = 1024
@@ -125,13 +127,17 @@ def is_root() -> bool:
 class App:
     """State shared by all request threads."""
 
-    def __init__(self, engine, lang=None):
+    def __init__(self, engine, lang=None, data_dir=None):
         self.engine = engine
         self.lang = lang
         self.token = secrets.token_urlsafe(18)
         self.allowed_hosts = set()
         self.auto_exit = False
         self.job = None
+        self.data_dir = Path(data_dir) if data_dir else guard_mod.data_dir()
+        self.alerts = guard_mod.AlertLog(self.data_dir / "guard-alerts.jsonl")
+        self.guard = None
+        self.guard_host = "0.0.0.0"
         self.lock = threading.Lock()
         self.last_seen = time.time()
         self.bye_at = None
@@ -214,6 +220,37 @@ class App:
             engine._LOG_SINK = None
             job.close()
 
+    # -- guard mode ---------------------------------------------------------
+
+    def start_guard(self, body: dict) -> dict:
+        with self.lock:
+            if self.guard and self.guard.running:
+                return self.guard.status()
+            raw = body.get("ports")
+            try:
+                if isinstance(raw, str):
+                    raw = [p for p in re.split(r"[,\s]+", raw) if p]
+                ports = [int(p) for p in raw] if raw else list(guard_mod.DEFAULT_DECOYS)
+                if not ports or len(ports) > 16 or any(p < 0 or p > 65535 for p in ports):
+                    raise ValueError
+                interval = float(body.get("interval", 60))
+            except (TypeError, ValueError):
+                raise ScanRequestError("Decoy ports must be numbers between 1 and 65535 (at most 16).") from None
+            interval = 0.0 if interval <= 0 else min(3600.0, max(10.0, interval))
+            ip, network = local_network_hint()
+            self.guard = guard_mod.Guard(
+                self.alerts, ports=ports, host=self.guard_host,
+                network=None if network.startswith("127.") else network, interval=interval,
+                state_path=self.data_dir / "guard.json")
+            return self.guard.start()
+
+    def stop_guard(self) -> dict:
+        with self.lock:
+            if self.guard:
+                self.guard.stop()
+                return self.guard.status()
+        return {"running": False}
+
     def report(self, job: Job, fmt: str, lang: str):
         """(bytes, content_type, extension) for a finished job."""
         engine = self.engine
@@ -242,6 +279,8 @@ class App:
             "root": is_root(), "scapy": bool(engine.HAVE_SCAPY),
             "top_ports": len(engine.TOP_PORTS), "max_hosts": MAX_HOSTS, "lang": self.lang,
             "job": {"id": job.id, "target": job.target, "finished": job.closed} if job else None,
+            "guard": self.guard.status() if self.guard else None,
+            "guard_ports": list(guard_mod.DEFAULT_DECOYS),
         }
 
 
@@ -332,6 +371,13 @@ def make_handler(app: App):
                 ("GET", "report"): lambda: self._api_report(query),
                 ("POST", "hb"): lambda: self._json(200, {"ok": True}),
                 ("POST", "bye"): self._api_bye,
+                ("POST", "guard/start"): self._api_guard_start,
+                ("POST", "guard/stop"): lambda: self._json(200, app.stop_guard()),
+                ("GET", "guard/status"): lambda: self._json(
+                    200, app.guard.status() if app.guard else {"running": False}),
+                ("GET", "guard/events"): lambda: self._api_guard_events(query),
+                ("POST", "guard/trust"): self._api_guard_trust,
+                ("GET", "guard/block"): lambda: self._api_guard_block(query),
             }
             handler = routes.get((self.command, name))
             if handler is None:
@@ -374,6 +420,57 @@ def make_handler(app: App):
         def _api_bye(self):
             app.bye_at = time.time()
             self._json(200, {"ok": True})
+
+        def _api_guard_start(self):
+            try:
+                self._json(200, app.start_guard(self._read_json()))
+            except ScanRequestError as err:
+                self._json(err.status, {"error": str(err)})
+
+        def _api_guard_trust(self):
+            guard = app.guard
+            ok = bool(guard and guard.trust(str(self._read_json().get("mac", ""))))
+            self._json(200 if ok else 400, {"ok": ok})
+
+        def _api_guard_block(self, query):
+            guard = app.guard
+            ip = (query.get("ip") or [""])[0]
+            try:
+                own = guard.own if guard else guard_mod.own_addresses()
+                gateway = guard.gateway if guard else guard_mod.default_gateway()
+                self._json(200, guard_mod.block_commands(ip, gateway=gateway, own=own))
+            except guard_mod.ProtectedAddress:
+                self._json(409, {"error": "protected"})
+            except ValueError as err:
+                self._json(400, {"error": str(err)})
+
+        def _api_guard_events(self, query):
+            try:  # a reconnecting EventSource resumes after the last alert it saw
+                after = int(self.headers.get("Last-Event-ID") or (query.get("from") or ["0"])[0])
+            except ValueError:
+                after = 0
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
+            app.sse_clients += 1
+            try:
+                while not app.finished.is_set():
+                    batch = app.alerts.wait(after, 5)
+                    if batch:
+                        chunk = "".join(f"id: {a['id']}\ndata: {json.dumps(a, ensure_ascii=False)}\n\n"
+                                        for a in batch)
+                        after = batch[-1]["id"]
+                        self.wfile.write(chunk.encode("utf-8"))
+                    else:
+                        self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                    app.last_seen = time.time()
+            except (BrokenPipeError, ConnectionError, OSError):
+                return
+            finally:
+                app.sse_clients -= 1
 
         def _job_for(self, query):
             job = app.job
@@ -526,5 +623,7 @@ def serve(engine, port: int = 0, open_window: bool = True, keep_alive: bool = Fa
         app.finished.set()
         if app.job is not None:
             app.job.cancel.set()
+        if app.guard is not None:
+            app.guard.stop()
         httpd.server_close()
     return 0

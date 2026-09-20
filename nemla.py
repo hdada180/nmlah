@@ -145,6 +145,17 @@ STRINGS = {
         "f_tls_old": "Port {port} still accepts an obsolete protocol ({version}).",
         "f_tls_selfsigned": "The TLS certificate on port {port} is self-signed.",
         "f_version": "{product} {version} on port {port} announces its exact version to anyone who connects.",
+        "g_tripwire": "{src} connected to decoy port(s) {ports} ({count} time(s)). Nothing legitimate uses these ports.",
+        "g_new_device": "New device on the network: {ip} ({mac}). It was not in the trusted list.",
+        "g_arp_change": "{ip} now answers from {new_mac} instead of {old_mac}. This can be a sign of ARP spoofing.",
+        "g_arp_gateway": "The gateway {ip} changed from {old_mac} to {new_mac}. This is a classic sign of ARP spoofing.",
+        "g_arp_dup": "{mac} answers for several addresses including the gateway {ip}: {ips}.",
+        "g_baseline": "Learned {devices} device(s) as the trusted baseline.",
+        "g_started": "Guard is watching. Decoy ports: {ports}. Press Ctrl+C to stop.",
+        "g_port_failed": "Could not open decoy port {port}: {reason}",
+        "g_no_network": "No local network found: only the decoy ports are watched.",
+        "g_stopped": "Guard stopped.",
+        "g_block_hint": "To block it on this computer: {command}",
     },
     "ar": {
         "notice": "استخدمها فقط على شبكات تملكها أو لديك تصريح صريح لفحصها.",
@@ -209,6 +220,17 @@ STRINGS = {
         "f_tls_old": "المنفذ {port} ما زال يقبل بروتوكولاً قديماً ({version}).",
         "f_tls_selfsigned": "شهادة TLS على المنفذ {port} موقّعة ذاتياً.",
         "f_version": "{product} {version} على المنفذ {port} يعلن نسخته بدقة لأي جهة تتصل به.",
+        "g_tripwire": "اتصل {src} بمنفذ الطُّعم {ports} ({count} مرة). لا توجد أي خدمة سليمة تستخدم هذه المنافذ.",
+        "g_new_device": "جهاز جديد على الشبكة: {ip} ({mac}). لم يكن في قائمة الأجهزة الموثوقة.",
+        "g_arp_change": "{ip} صار يردّ من {new_mac} بدل {old_mac}. قد يدل ذلك على انتحال ARP.",
+        "g_arp_gateway": "تغيّرت بوابة الشبكة {ip} من {old_mac} إلى {new_mac}. هذه علامة كلاسيكية على انتحال ARP.",
+        "g_arp_dup": "{mac} يردّ عن عدة عناوين منها البوابة {ip}: {ips}.",
+        "g_baseline": "تم تعلّم {devices} جهاز كقائمة أساس موثوقة.",
+        "g_started": "وضع الحراسة يعمل. منافذ الطُّعم: {ports}. اضغط Ctrl+C للإيقاف.",
+        "g_port_failed": "تعذّر فتح منفذ الطُّعم {port}: {reason}",
+        "g_no_network": "لم يتم العثور على شبكة محلية: تتم مراقبة منافذ الطُّعم فقط.",
+        "g_stopped": "توقف وضع الحراسة.",
+        "g_block_hint": "لحظره على هذا الجهاز: {command}",
     },
     "he": {
         "notice": "השתמשו רק ברשתות שבבעלותכם או שיש לכם אישור לבדוק.",
@@ -273,6 +295,17 @@ STRINGS = {
         "f_tls_old": "פורט {port} עדיין מקבל פרוטוקול מיושן ({version}).",
         "f_tls_selfsigned": "תעודת ה-TLS בפורט {port} חתומה עצמית.",
         "f_version": "{product} {version} בפורט {port} מכריז על הגרסה המדויקת שלו לכל מי שמתחבר.",
+        "g_tripwire": "{src} התחבר לפורטי הפיתיון {ports} ({count} פעמים). שום שירות לגיטימי לא משתמש בפורטים האלה.",
+        "g_new_device": "מכשיר חדש ברשת: {ip} ({mac}). הוא לא היה ברשימת המכשירים המהימנים.",
+        "g_arp_change": "{ip} עונה כעת מ-{new_mac} במקום {old_mac}. זה עשוי להעיד על התחזות ARP.",
+        "g_arp_gateway": "שער הרשת {ip} השתנה מ-{old_mac} ל-{new_mac}. זה סימן קלאסי להתחזות ARP.",
+        "g_arp_dup": "{mac} עונה עבור כמה כתובות, כולל שער הרשת {ip}: {ips}.",
+        "g_baseline": "נלמדו {devices} מכשירים כקו בסיס מהימן.",
+        "g_started": "מצב שמירה פעיל. פורטי פיתיון: {ports}. לחצו Ctrl+C כדי לעצור.",
+        "g_port_failed": "לא ניתן לפתוח את פורט הפיתיון {port}: {reason}",
+        "g_no_network": "לא נמצאה רשת מקומית: רק פורטי הפיתיון מנוטרים.",
+        "g_stopped": "מצב שמירה נעצר.",
+        "g_block_hint": "כדי לחסום אותו במחשב הזה: {command}",
     },
 }
 
@@ -1405,6 +1438,18 @@ def build_parser() -> argparse.ArgumentParser:
                    help="interface and report language (default en)")
     p.add_argument("--version", action="version", version=f"nemla {__version__}")
 
+    guard = p.add_argument_group("guard mode (defensive)")
+    guard.add_argument("--guard", action="store_true",
+                       help="watch this network for suspicious activity (decoy ports, unknown "
+                            "devices, ARP changes) and print alerts until Ctrl+C")
+    guard.add_argument("--guard-ports", metavar="LIST",
+                       help="decoy ports to open, e.g. 2222,2323 (default 2222,2323,5901,8888,3307)")
+    guard.add_argument("--guard-interval", type=float, default=60.0, metavar="SECONDS",
+                       help="seconds between device checks (default 60, 0 = decoy ports only)")
+    guard.add_argument("--guard-log", metavar="FILE",
+                       help="append alerts to this JSON-lines file "
+                            "(default: nemla/guard-alerts.jsonl in your data folder)")
+
     ui = p.add_argument_group("3D interface")
     ui.add_argument("--ui", action="store_true",
                     help="open the 3D interface (this is also what happens with no arguments)")
@@ -1432,6 +1477,69 @@ def launch_ui(args) -> int:
                  keep_alive=args.keep_alive, lang=args.lang)
 
 
+def alert_text(alert: dict) -> str:
+    """One guard alert as a sentence in the active language."""
+    kind, detail = alert["kind"], alert.get("detail") or {}
+    if kind == "tripwire":
+        return t("g_tripwire", src=alert["src_ip"], count=detail.get("count", 1),
+                 ports=", ".join(str(p) for p in detail.get("ports", [])))
+    if kind == "new_device":
+        return t("g_new_device", ip=alert["src_ip"], mac=alert["mac"])
+    if kind == "arp_change":
+        return t("g_arp_gateway" if detail.get("gateway") else "g_arp_change", ip=alert["src_ip"],
+                 old_mac=detail.get("old_mac"), new_mac=detail.get("new_mac"))
+    if kind == "arp_dup":
+        return t("g_arp_dup", mac=alert["mac"], ip=alert["src_ip"], ips=", ".join(detail.get("ips", [])))
+    if kind == "baseline":
+        return t("g_baseline", devices=detail.get("devices", 0))
+    return kind
+
+
+def run_guard(args) -> int:
+    """Headless guard mode: print alerts until Ctrl+C. Watches only, never attacks."""
+    try:
+        from nemla_ui import guard
+        from nemla_ui.server import local_network_hint
+    except ImportError:
+        log("The guard files (the nemla_ui/ folder) were not found next to nemla.py.")
+        return 1
+    try:
+        ports = parse_ports(args.guard_ports) if args.guard_ports else list(guard.DEFAULT_DECOYS)
+    except ValueError as err:
+        log(t("invalid_ports", err=err))
+        return 1
+    print_banner()
+    alerts = guard.AlertLog(args.guard_log or guard.data_dir() / "guard-alerts.jsonl")
+    _, network = local_network_hint()
+    network = None if network.startswith("127.") else network
+    watcher = guard.Guard(alerts, ports=ports, network=network, interval=max(0.0, args.guard_interval),
+                          state_path=guard.data_dir() / "guard.json")
+    status = watcher.start()
+    for port, reason in status["failed"].items():
+        log(t("g_port_failed", port=port, reason=reason))
+    if not network:
+        log(t("g_no_network"))
+    log(t("g_started", ports=", ".join(str(p) for p in status["decoys"]) or "-"))
+    seen = 0
+    try:
+        while True:
+            for alert in alerts.wait(seen, 1.0):
+                seen = alert["id"]
+                log(f"[{t('sev_' + alert['severity'])}] {alert_text(alert)}")
+                if alert["kind"] != "baseline" and alert.get("src_ip"):
+                    try:
+                        command = watcher.block(alert["src_ip"])["options"][0]["commands"][0]
+                        log("    " + t("g_block_hint", command=command))
+                    except ValueError:
+                        pass  # our own address or the gateway: never suggest blocking those
+    except KeyboardInterrupt:
+        pass
+    finally:
+        watcher.stop()
+        log(t("g_stopped"))
+    return 0
+
+
 def manage_launcher(args) -> int:
     try:
         from nemla_ui import launcher
@@ -1457,6 +1565,8 @@ def main(argv=None) -> int:
 
     if args.install_launcher or args.uninstall_launcher:
         return manage_launcher(args)
+    if args.guard:
+        return run_guard(args)
     if args.ui or bare:
         print_banner()
         return launch_ui(args)

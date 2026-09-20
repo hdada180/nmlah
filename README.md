@@ -38,6 +38,24 @@ Use it in scripts and CI: the command below exits with code 3 when a finding at 
 python3 nemla.py -t 10.0.0.0/24 --fail-on high
 ```
 
+## Guard mode (defensive)
+
+Nemla can also watch a network instead of scanning it. Guard mode looks for three signs that something suspicious is going on inside your network:
+
+- **Decoy ports.** Nemla opens a few ports that no legitimate device or person has any reason to touch (2222, 2323, 5901, 8888 and 3307 by default). Whatever connects to one is probing your network, and Nemla records who it was and what it sent. This gives very few false alarms.
+- **Unknown devices.** The first check learns your devices by their hardware (MAC) address. After that, a device that was not there before raises an alert.
+- **ARP changes.** If an address suddenly answers from a different device, above all your gateway, that is the classic trace of ARP spoofing (a man-in-the-middle).
+
+Guard only watches and alerts. It never attacks back, never scans other machines on its own, and never changes your firewall: for a device you want to block it shows the exact command and leaves running it to you.
+
+```bash
+python3 nemla.py --guard
+```
+
+Or switch on **Guard** in the 3D interface: the screen flashes, the source glows red on the map, and every alert says what to do next. The interface only guards while it is open. For always-on protection run `nemla --guard` (for example on a Raspberry Pi), optionally with `--guard-log alerts.jsonl` so alerts are also saved as JSON lines.
+
+Notes: decoy ports above 1024 need no special rights, and nothing in Guard needs root. Connections from the computer running Guard are ignored, and phones that randomise their Wi-Fi address can look like new devices.
+
 ## The 3D interface
 
 Run Nemla with no arguments and it opens its own window: a 3D map of your network, a scan form, a live host list and a host inspector. It is the same scanner as the command line, just easier to work with.
@@ -128,6 +146,10 @@ python3 nemla.py -t 192.168.1.10 --no-ping
 | `--no-os` | Skip OS fingerprinting |
 | `--no-banner` | Skip banner grabbing and service detection (versions, TLS, web titles) |
 | `--fail-on LEVEL` | Exit with code 3 if any finding is at `low`, `medium` or `high` level or above |
+| `--guard` | Watch the network for suspicious activity and print alerts until Ctrl+C |
+| `--guard-ports LIST` | Decoy ports to open (default `2222,2323,5901,8888,3307`) |
+| `--guard-interval SECONDS` | Seconds between device checks (default 60, `0` means decoy ports only) |
+| `--guard-log FILE` | Also append alerts to a JSON-lines file |
 | `--threads N` | Worker threads (default 150) |
 | `--timeout S` | TCP connect timeout in seconds (default 0.7) |
 | `--max-hosts N` | Refuse targets bigger than N addresses (default 1024) |
@@ -172,6 +194,8 @@ The tests run entirely against `127.0.0.1` with throw-away local servers. They a
 - [x] JSON and CSV output
 - [x] English / Arabic / Hebrew interface
 - [x] Service and version detection, TLS certificate details, findings and `--fail-on`
+- [x] Guard mode: decoy ports, unknown devices and ARP changes
+- [ ] Scan history and "what changed" comparison
 - [x] Unit and end-to-end tests, CI
 - [x] 3D interface, Linux applications-menu launcher and the Nemla identity
 - [ ] Scan history inside the interface
