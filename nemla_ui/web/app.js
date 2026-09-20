@@ -125,6 +125,8 @@
   function renderStats() {
     $('#statHosts').textContent = state.hosts.size;
     $('#statPorts').textContent = state.openPorts;
+    const fc = countFindings(), sf = $('#statFindings');
+    sf.textContent = fc.n; sf.classList.toggle('hot', fc.high > 0);
     const c = $('#hostCount');
     c.textContent = state.hosts.size || ''; c.dataset.n = state.hosts.size;
     const secs = state.finalSeconds != null ? state.finalSeconds : state.startedAt ? (Date.now() - state.startedAt) / 1000 : 0;
@@ -172,6 +174,23 @@
   const hostEls = new Map();
   function portsColor(port) { return C.CATEGORIES[C.categoryOf(port)].color; }
 
+  const SEV_RANK = { high: 3, medium: 2, low: 1, info: 0 };
+  function riskOf(h) {
+    let best = null;
+    (h.findings || []).forEach((f) => {
+      if (f.severity === 'high') best = 'high';
+      else if (f.severity === 'medium' && best !== 'high') best = 'medium';
+    });
+    return best;
+  }
+  const findingText = (f) => t('find.' + f.id, Object.assign({ port: f.port }, f.params || {}));
+  function countFindings() {
+    let n = 0, high = 0;
+    state.hosts.forEach((h) => (h.findings || []).forEach((f) => { if (f.severity !== 'info') { n += 1; if (f.severity === 'high') high += 1; } }));
+    return { n, high };
+  }
+  function applyRisk(h) { scene.setHostRisk(h.ip, riskOf(h)); }
+
   function renderHosts(force) {
     const list = $('#hostList');
     const q = $('#hostFilter').value.trim().toLowerCase();
@@ -182,7 +201,7 @@
     });
     const els = hosts.map((h) => {
       let li = hostEls.get(h.ip);
-      const sig = h.state + '|' + h.open_ports.length + '|' + (h.os_guess || '') + '|' + (state.selected === h.ip) + '|' + I.lang;
+      const sig = h.state + '|' + h.open_ports.length + '|' + (h.os_guess || '') + '|' + (state.selected === h.ip) + '|' + I.lang + '|' + riskOf(h);
       if (!li) {
         li = el('li', { class: 'host', tabindex: '0', role: 'button' });
         li.addEventListener('click', () => scene.select(state.selected === h.ip ? null : h.ip));
@@ -194,6 +213,7 @@
       if (li._sig !== sig || force) {
         li._sig = sig;
         li.dataset.state = h.state;
+        li.dataset.risk = riskOf(h) || '';
         li.classList.toggle('selected', state.selected === h.ip);
         const dots = el('span', { class: 'dots' });
         h.open_ports.slice(0, 7).forEach((p) => { const i = el('i'); i.style.setProperty('--c', portsColor(p.port)); i.title = p.port + ' ' + p.service; dots.append(i); });
@@ -236,8 +256,12 @@
 
   function summary(h) {
     const lines = [h.ip + (h.os_guess ? ' - ' + h.os_guess : '')];
-    h.open_ports.forEach((p) => lines.push('  ' + p.port + '/tcp  ' + p.service + (p.banner ? '  ' + p.banner : '')));
+    h.open_ports.forEach((p) => {
+      const product = [p.product, p.version].filter(Boolean).join(' ');
+      lines.push('  ' + p.port + '/tcp  ' + p.service + (product ? '  ' + product : '') + (p.banner ? '  ' + p.banner : ''));
+    });
     if (!h.open_ports.length) lines.push('  ' + t('insp.noports'));
+    (h.findings || []).filter((f) => f.severity !== 'info').forEach((f) => lines.push('  [' + t('sev.' + f.severity) + '] ' + findingText(f)));
     return lines.join('\n');
   }
 
@@ -255,12 +279,32 @@
     if (h.method) rows.push(['insp.via', h.method]);
     kv.replaceChildren(...rows.flatMap(([k, v]) => [el('dt', { text: k.startsWith('insp.') ? t(k) : k }), el('dd', { text: v })]));
     const cnt = $('#inspCount'); cnt.textContent = h.open_ports.length || ''; cnt.dataset.n = h.open_ports.length;
+
+    const finds = (h.findings || []).slice().sort((a, b) => SEV_RANK[b.severity] - SEV_RANK[a.severity]);
+    const fl = $('#inspFindings'), fsig = h.ip + '|' + finds.length + '|' + h.state + '|' + I.lang;
+    const shown = finds.filter((f) => f.severity !== 'info').length;
+    const fcnt = $('#findCount'); fcnt.textContent = shown || ''; fcnt.dataset.n = shown;
+    if (!soft || fl._sig !== fsig) {
+      fl._sig = fsig;
+      const rows = finds.map((f) => {
+        const li = el('li', { 'data-sev': f.severity }, el('span', { class: 'sev-chip', text: t('sev.' + f.severity) }), el('span', { text: findingText(f) }));
+        return li;
+      });
+      if (!rows.length && (h.state === 'done' || state.phase !== 'running')) rows.push(el('li', { class: 'ok' }, el('span', { text: t('insp.nofindings') })));
+      fl.replaceChildren(...rows);
+    }
+
     const ul = $('#inspPorts');
     const sig = h.ip + '|' + h.open_ports.length + '|' + h.state + '|' + I.lang;
     if (!soft || ul._sig !== sig) {
       ul._sig = sig;
       const items = h.open_ports.map((p) => {
+        const product = [p.product, p.version].filter(Boolean).join(' ');
+        const tls = p.tls || {};
+        const metaBits = [p.title, tls.version && [tls.version, tls.subject, tls.not_after && ('→ ' + tls.not_after)].filter(Boolean).join(' · ')].filter(Boolean);
         const li = el('li', {}, el('div', { class: 'row' }, el('span', { class: 'pnum', text: p.port }), el('span', { class: 'psvc', text: p.service })),
+          product ? el('span', { class: 'prod', text: product }) : null,
+          metaBits.length ? el('span', { class: 'meta', text: metaBits.join(' | ') }) : null,
           el('code', { class: p.banner ? '' : 'none', text: p.banner || t('insp.nobanner') }));
         li.style.setProperty('--c', portsColor(p.port));
         return li;
@@ -318,7 +362,8 @@
       }
       case 'port': {
         const h = state.hosts.get(ev.ip); if (!h || h.open_ports.some((p) => p.port === ev.port)) break;
-        h.open_ports.push({ port: ev.port, service: ev.service, banner: ev.banner }); state.openPorts += 1;
+        const rec = Object.assign({}, ev); delete rec.type; delete rec.ip;
+        h.open_ports.push(rec); state.openPorts += 1;
         scene.addPort(ev.ip, ev); dirty(); break;
       }
       case 'host_done': {
@@ -326,7 +371,7 @@
         state.openPorts += ev.host.open_ports.length - h.open_ports.length;
         Object.assign(h, ev.host, { state: 'done' });
         ev.host.open_ports.forEach((p) => scene.addPort(h.ip, p));
-        scene.setHostState(h.ip, 'done'); dirty(); break;
+        scene.setHostState(h.ip, 'done'); applyRisk(h); dirty(); break;
       }
       case 'log': addLog(ev.msg); break;
       case 'done': finish(ev); break;
@@ -342,7 +387,7 @@
       if (!h) { h = { ip: src.ip, method: src.discovery, open_ports: [] }; state.hosts.set(src.ip, h); scene.addHost(h); }
       Object.assign(h, src, { state: 'done' });
       src.open_ports.forEach((p) => scene.addPort(h.ip, p));
-      scene.setHostState(h.ip, 'done');
+      scene.setHostState(h.ip, 'done'); applyRisk(h);
     });
     state.hosts.forEach((h) => { if (h.state === 'scanning') { h.state = 'up'; scene.setHostState(h.ip, 'up'); } });
     state.openPorts = Array.from(state.hosts.values()).reduce((n, h) => n + h.open_ports.length, 0);
@@ -352,7 +397,7 @@
     scene.setPhase('done');
     if (state.es) { state.es.close(); state.es = null; }
     renderStatus(); dirty();
-    toast(ev.meta.cancelled ? t('toast.stopped') : t('toast.done', { hosts: state.hosts.size, ports: state.openPorts }));
+    toast(ev.meta.cancelled ? t('toast.stopped') : t('toast.done', { hosts: state.hosts.size, ports: state.openPorts, findings: countFindings().n }));
   }
 
   function fail(msg) {
@@ -455,7 +500,10 @@
     setTimeout(() => node.remove(), 3700);
   }
 
-  function closeMenu() { $('#exportPop').hidden = true; $('#btnExport').setAttribute('aria-expanded', 'false'); }
+  function closeMenu() {
+    $('#exportPop').hidden = true; $('#btnExport').setAttribute('aria-expanded', 'false');
+    $('#langPop').hidden = true; $('#btnLang').setAttribute('aria-expanded', 'false');
+  }
 
   function renderLegend() {
     $('#legend').replaceChildren(...Object.keys(C.CATEGORIES).map((k) => {
@@ -466,8 +514,10 @@
 
   function applyLang(lang) {
     I.setLang(lang);
-    $('#btnLang').textContent = t('lang.switch');
-    $('#btnLang').lang = lang === 'ar' ? 'en' : 'ar';
+    $('#langCur').textContent = I.names[I.lang];
+    $$('#langPop a').forEach((a) => a.setAttribute('aria-current', String(a.dataset.lang === I.lang)));
+    // the local-language brand name is Arabic for English and Arabic, Hebrew for Hebrew
+    $$('.brand-ar, .ar-name').forEach((n) => { n.lang = I.lang === 'he' ? 'he' : 'ar'; });
     renderLegend(); renderStatus(); renderStats(); renderHosts(true); renderInspector(); renderLog(); updateInsets();
   }
 
@@ -496,7 +546,13 @@
       $('#ports').hidden = !custom; if (custom) $('#ports').focus();
     }));
     $('#hostFilter').addEventListener('input', () => renderHosts(true));
-    $('#btnLang').addEventListener('click', () => applyLang(I.lang === 'ar' ? 'en' : 'ar'));
+    $('#btnLang').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const pop = $('#langPop'), open = pop.hidden;
+      closeMenu(); pop.hidden = !open;
+      $('#btnLang').setAttribute('aria-expanded', String(open));
+    });
+    $$('#langPop a').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); closeMenu(); applyLang(a.dataset.lang); }));
     $('#btnLabels').addEventListener('click', (e) => {
       const on = e.currentTarget.getAttribute('aria-pressed') !== 'true';
       e.currentTarget.setAttribute('aria-pressed', String(on)); scene.setLabels(on);
@@ -513,11 +569,12 @@
     });
     $('#btnExport').addEventListener('click', (e) => {
       e.stopPropagation();
-      const pop = $('#exportPop'); pop.hidden = !pop.hidden;
-      $('#btnExport').setAttribute('aria-expanded', String(!pop.hidden));
+      const pop = $('#exportPop'), open = pop.hidden;
+      closeMenu(); pop.hidden = !open;
+      $('#btnExport').setAttribute('aria-expanded', String(open));
     });
     $$('#exportPop a').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); download(a.dataset.fmt); }));
-    document.addEventListener('click', (e) => { if (!e.target.closest('#exportMenu')) closeMenu(); });
+    document.addEventListener('click', (e) => { if (!e.target.closest('#exportMenu, #langMenu')) closeMenu(); });
     document.addEventListener('keydown', (e) => {
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '');
       if (e.key === 'Escape') { closeMenu(); if (state.selected) scene.select(null); }

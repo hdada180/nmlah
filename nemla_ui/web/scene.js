@@ -170,6 +170,11 @@
       if (state === 'done') n.rings.push({ t0: this.time });
     }
 
+    setHostRisk(ip, level) {
+      const n = this.nodes.get(ip);
+      if (n) n.risk = level === 'high' || level === 'medium' ? level : null;
+    }
+
     addPort(ip, port) {
       const n = this.nodes.get(ip);
       if (!n || n.ports.some((p) => p.port === port.port)) return;
@@ -596,6 +601,17 @@
         const k = (T - rg.t0) / 1.4;
         ctx.strokeStyle = rgba(base, (1 - k) * 0.7);
         ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r * (1.2 + ease(k) * 4.5), 0, TAU); ctx.stroke();
+      }
+      if (n.risk) {
+        // a slow warning pulse: rose for high findings, gold for medium
+        const col = n.risk === 'high' ? COLORS.rose : COLORS.gold;
+        const pulse = 0.5 + 0.5 * Math.sin(T * (n.risk === 'high' ? 3.4 : 2.2) + n.idx);
+        g = r * (5.2 + pulse * 1.4); ctx.globalAlpha = (0.42 + 0.25 * pulse) * fog;
+        ctx.drawImage(glowSprite(col), x - g / 2, y - g / 2, g, g);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = rgba(col, 0.5 + 0.4 * pulse); ctx.lineWidth = 1.7;
+        ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.arc(x, y, r * 1.85 + pulse * 2.5, 0, TAU); ctx.stroke();
+        ctx.setLineDash([]);
       }
       ctx.globalCompositeOperation = 'source-over';
 

@@ -26,6 +26,7 @@
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19.5h14"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4v13H6z"/><path d="M14 3.5v4h4"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
 </svg>
 
 <div class="backdrop"></div>
@@ -36,7 +37,7 @@
   <header class="topbar">
     <a class="brand" href="#" aria-label="Nemla" id="brand">
       <img class="brand-logo" src="brand/nemla-logo.svg" alt="Nemla">
-      <span class="brand-ar" lang="ar">نملة</span>
+      <span class="brand-ar" lang="ar" data-i18n="brand.local">نملة</span>
     </a>
 
     <div class="status" id="status" data-state="idle" role="status">
@@ -57,7 +58,16 @@
           <a href="#" data-fmt="csv"><svg><use href="#i-file"/></svg><span data-i18n="export.csv">CSV table</span></a>
         </div>
       </div>
-      <button class="btn" id="btnLang" lang="ar">العربية</button>
+      <div class="menu" id="langMenu">
+        <button class="btn" id="btnLang" aria-haspopup="true" aria-expanded="false" data-i18n-title="lang.menu">
+          <svg><use href="#i-globe"/></svg><span id="langCur">English</span>
+        </button>
+        <div class="menu-pop" id="langPop" hidden>
+          <a href="#" data-lang="en" lang="en"><span>English</span></a>
+          <a href="#" data-lang="ar" lang="ar"><span>العربية</span></a>
+          <a href="#" data-lang="he" lang="he"><span>עברית</span></a>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -136,6 +146,8 @@
     <div class="badges" id="inspBadges"></div>
     <div class="insp-body">
       <dl class="kv" id="inspKv"></dl>
+      <h3><span data-i18n="insp.findings">Findings</span><b class="count" id="findCount" data-n="0"></b></h3>
+      <ul class="find-list" id="inspFindings"></ul>
       <h3><span data-i18n="insp.ports">Open ports</span><b class="count" id="inspCount" data-n="0"></b></h3>
       <ul class="port-list" id="inspPorts"></ul>
     </div>
@@ -145,6 +157,7 @@
   <section class="panel hud" id="hud" data-state="idle" data-tilt>
     <div class="stat"><span class="k" data-i18n="hud.hosts">Hosts</span><b id="statHosts">0</b></div>
     <div class="stat"><span class="k" data-i18n="hud.open">Open ports</span><b id="statPorts">0</b></div>
+    <div class="stat"><span class="k" data-i18n="hud.findings">Findings</span><b id="statFindings">0</b></div>
     <div class="stat"><span class="k" data-i18n="hud.time">Elapsed</span><b id="statTime">0.0s</b></div>
     <div class="progress">
       <div class="phase"><span class="demo-badge" id="demoBadge" hidden data-i18n="demo.badge">DEMO</span> <span id="phaseText" data-i18n="phase.idle">Ready when you are</span></div>
@@ -183,7 +196,7 @@
 ██  ██  ██  ████████    ██  ██  ██  ██          ██████████
 ██    ████  ██          ██      ██  ██          ██      ██
 ██      ██  ██████████  ██      ██  ██████████  ██      ██</pre>
-  <div class="ar-name" lang="ar">نملة</div>
+  <div class="ar-name" lang="ar" data-i18n="brand.local">نملة</div>
   <div class="tag" data-i18n="app.tagline">Discover · Scan · Fingerprint · Report</div>
   <ul class="boot" dir="ltr">
     <li style="--i:0"><span class="chev">▸</span><span data-i18n="boot.colony">Waking the colony</span><b>ok</b></li>

@@ -23,7 +23,7 @@
   --grad-ember: linear-gradient(135deg, #FFC46B 0%, #FF7A1A 52%, #E8460C 100%);
   --line: rgba(255, 255, 255, .08);
   --line-strong: rgba(255, 255, 255, .16);
-  --font-ui: "Inter", "Segoe UI", "Noto Sans", "Cantarell", "Noto Sans Arabic", "Noto Kufi Arabic", "Cairo", "Tahoma", system-ui, sans-serif;
+  --font-ui: "Inter", "Segoe UI", "Noto Sans", "Cantarell", "Noto Sans Arabic", "Noto Kufi Arabic", "Cairo", "Noto Sans Hebrew", "Heebo", "Arial Hebrew", "Tahoma", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "DejaVu Sans Mono", ui-monospace, "SF Mono", Consolas, monospace;
   --radius: 20px;
   --il: 0px;
@@ -158,6 +158,8 @@ button { cursor: pointer; }
 }
 .menu-pop a:hover { background: rgba(255, 122, 26, .14); color: var(--ember-300); }
 .menu-pop svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.menu-pop a[aria-current="true"] { background: rgba(255, 122, 26, .14); color: var(--ember-300); }
+#langPop { min-width: 150px; }
 
 /* ---------- dock ---------- */
 .dock {
@@ -247,6 +249,8 @@ details.adv[open] summary svg { transform: rotate(180deg); }
 @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 .host:hover, .host.hover { background: rgba(255, 122, 26, .09); border-color: rgba(255, 122, 26, .3); }
 .host.selected { background: rgba(255, 122, 26, .16); border-color: var(--ember-500); }
+.host[data-risk="high"] { border-inline-start: 3px solid var(--rose); }
+.host[data-risk="medium"] { border-inline-start: 3px solid var(--gold); }
 .host .state { width: 10px; height: 10px; border-radius: 50%; background: var(--slate); }
 .host[data-state="scanning"] .state { background: var(--ember-500); animation: beat 1s ease-out infinite; }
 .host[data-state="done"] .state { background: var(--mint); box-shadow: 0 0 10px rgba(62, 230, 180, .7); }
@@ -286,6 +290,19 @@ details.adv[open] summary svg { transform: rotate(180deg); }
 .port-list .psvc { font-weight: 600; }
 .port-list code { display: block; margin-top: 4px; font-family: var(--font-mono); font-size: 11px; color: var(--ink-dim); word-break: break-all; direction: ltr; text-align: start; }
 .port-list code.none { color: var(--ink-faint); font-family: var(--font-ui); }
+.port-list .prod { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 700; color: var(--ink); direction: ltr; text-align: start; }
+.port-list .meta { display: block; margin-top: 2px; font-size: 11px; color: var(--ink-faint); direction: ltr; text-align: start; word-break: break-word; }
+.find-list { list-style: none; margin: 0 0 4px; padding: 0; display: grid; gap: 8px; }
+.find-list li {
+  display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 9px 11px; border-radius: 12px; font-size: 13px;
+  background: rgba(255, 255, 255, .03); border-inline-start: 3px solid var(--c, var(--slate)); animation: rise .3s ease-out;
+}
+.find-list li[data-sev="high"] { --c: var(--rose); background: rgba(255, 93, 143, .07); }
+.find-list li[data-sev="medium"] { --c: var(--gold); }
+.find-list li[data-sev="low"] { --c: var(--sky); }
+.find-list li[data-sev="info"] { --c: var(--slate); color: var(--ink-dim); }
+.find-list .ok { grid-template-columns: 1fr; --c: var(--mint); color: var(--ink-dim); }
+.sev-chip { padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; color: #14102B; background: var(--c, var(--slate)); white-space: nowrap; }
 .insp-foot { padding: 12px 18px 18px; border-top: 1px solid var(--line); }
 .insp-foot .btn { width: 100%; }
 .badge { display: inline-flex; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--ember-300); background: rgba(255, 122, 26, .12); border: 1px solid rgba(255, 122, 26, .35); direction: ltr; }
@@ -301,6 +318,7 @@ details.adv[open] summary svg { transform: rotate(180deg); }
 .stat .k { display: block; font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--ink-faint); }
 [dir="rtl"] .stat .k { letter-spacing: 0; }
 .stat b { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; background: var(--grad-ember); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.stat b.hot { background: linear-gradient(135deg, #FFB3CB, #FF5D8F); -webkit-background-clip: text; background-clip: text; }
 .progress { min-width: 240px; max-width: 340px; flex: 1; }
 .progress .phase { font-size: 13px; font-weight: 600; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bar { height: 8px; border-radius: 999px; background: rgba(255, 255, 255, .07); overflow: hidden; }

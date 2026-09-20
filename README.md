@@ -8,7 +8,7 @@
 
 **English** · [العربية](README.ar.md)
 
-Nemla (Arabic: **نملة**, "ant") is a small, dependency-free network reconnaissance tool written in Python. Point it at an IP, a hostname, a range or a subnet and it finds live hosts, scans TCP ports, grabs service banners, makes a best-guess at the operating system, and writes a clean **HTML report** (plus JSON and CSV for scripting). The interface and the report are available in **English and Arabic**.
+Nemla (Arabic: **نملة**, "ant") is a small, dependency-free network reconnaissance tool written in Python. Point it at an IP, a hostname, a range or a subnet and it finds live hosts, scans TCP ports, identifies what is running (products, versions, TLS certificates), makes a best-guess at the operating system, tells you in plain words what looks risky, and writes a clean **HTML report** (plus JSON and CSV for scripting). The interface and the report are available in **English, Arabic and Hebrew**.
 
 ![Nemla HTML report](docs/report-en.png)
 
@@ -20,8 +20,23 @@ Nemla (Arabic: **نملة**, "ant") is a small, dependency-free network reconnai
 
 - **Zero setup** — a single Python file, standard library only. Scapy is optional.
 - **A report you can actually hand to someone** — a readable dark-mode HTML page, no XML converting.
-- **Arabic-first option** — `--lang ar` switches the whole CLI and the report to Arabic (right-to-left).
+- **Arabic and Hebrew** — `--lang ar` or `--lang he` switches the whole CLI, the report and the interface to right-to-left Arabic or Hebrew.
 - **Readable source** — one file you can read in an evening, which makes it good for learning how scanners work.
+
+## What Nemla tells you
+
+Besides open ports, Nemla identifies what is running and says what it means:
+
+- **Products and versions** from banners and light probes (OpenSSH, nginx, Apache, vsftpd, Postfix, MySQL, PostgreSQL, Redis and more), plus web page titles.
+- **TLS details:** protocol version, certificate subject and issuer, expiry date, and whether the certificate is self-signed.
+- **Findings** in plain words, each rated high, medium, low or info: cleartext services such as Telnet and FTP, databases and remote-access ports that are reachable, Redis, Memcached or Elasticsearch answering without a password, expired or soon-to-expire certificates, obsolete TLS versions, websites without HTTPS. Exposure on a public IP address is rated higher than on a private network.
+- Findings are observations only. Nemla never logs in, guesses passwords or exploits anything.
+
+Use it in scripts and CI: the command below exits with code 3 when a finding at that level or above is present.
+
+```bash
+python3 nemla.py -t 10.0.0.0/24 --fail-on high
+```
 
 ## The 3D interface
 
@@ -33,6 +48,7 @@ python3 nemla.py            # opens the 3D interface
 
 - **The colony view.** This computer is the nest in the middle, every discovered host floats around it, and each open port orbits its host, coloured by service type (web, remote access, database, mail, files). Drag to orbit, scroll to zoom, click a host to inspect it.
 - **Live.** Hosts and ports appear while the scan runs. Stop keeps the partial results.
+- **Risk at a glance.** Hosts with high or medium findings pulse rose or gold in the map, and the inspector lists every finding with its severity.
 - **Export.** HTML report, JSON or CSV from the Export button.
 - **English and Arabic**, right-to-left included.
 - **Try it without scanning.** "Watch a demo colony" replays a made-up network.
@@ -110,11 +126,12 @@ python3 nemla.py -t 192.168.1.10 --no-ping
 | `--csv FILE` | Also write the results as CSV |
 | `--no-ping` | Skip host discovery; treat every target as up |
 | `--no-os` | Skip OS fingerprinting |
-| `--no-banner` | Skip banner grabbing |
+| `--no-banner` | Skip banner grabbing and service detection (versions, TLS, web titles) |
+| `--fail-on LEVEL` | Exit with code 3 if any finding is at `low`, `medium` or `high` level or above |
 | `--threads N` | Worker threads (default 150) |
 | `--timeout S` | TCP connect timeout in seconds (default 0.7) |
 | `--max-hosts N` | Refuse targets bigger than N addresses (default 1024) |
-| `--lang en\|ar` | Language of the CLI, the report and the interface (default `en`) |
+| `--lang en\|ar\|he` | Language of the CLI, the report and the interface (default `en`) |
 | `--version` | Print the version |
 | `--ui` | Open the 3D interface (also what happens with no arguments) |
 | `--ui-port PORT` | Port for the local interface server (default: any free port) |
@@ -126,13 +143,14 @@ python3 nemla.py -t 192.168.1.10 --no-ping
 
 1. **Discovery** — ARP on local networks (needs Scapy + root). If ARP finds nothing, or the target isn't local, Nemla falls back to ICMP (system `ping`) and TCP probes. A TCP connection *refused* still proves the host is alive.
 2. **Port scan** — concurrent TCP connect scan (`ThreadPoolExecutor`). Service names come from a built-in table with a fallback to the system services database.
-3. **Banner grabbing** — Nemla listens first (SSH, FTP and SMTP greet you). If the port stays silent, it sends a harmless HTTP `HEAD`, but only on HTTP ports and ports with no known non-HTTP service. TLS ports are not probed.
+3. **Banner grabbing and detection** — Nemla listens first (SSH, FTP and SMTP greet you). If the port stays silent, it sends a harmless HTTP `HEAD`, but only on HTTP ports and ports with no known non-HTTP service. On open ports it then runs ordinary identification probes: a web `GET` for the page title, a TLS handshake for the certificate, Redis `PING`, Memcached `version`, a PostgreSQL SSL request. Nothing logs in and nothing changes state. Use `--no-banner` to skip all of it.
 4. **OS guess** — heuristic: TTL (≤64 Linux/Unix/macOS, ≤128 Windows, otherwise network device) refined by open ports (RDP/SMB, SSH). Treat it as an estimate.
 5. **Report** — HTML (all scanned data is HTML-escaped, since banners come from untrusted hosts), plus optional JSON/CSV.
 
 ## Limitations
 
 - IPv4 only, TCP connect scan only (no SYN/UDP scanning).
+- Findings describe exposure, not vulnerabilities: Nemla does not match versions against a CVE database.
 - OS detection is a TTL-and-ports heuristic, not real fingerprinting.
 - Firewalls that drop packets will make hosts look down. Try `--no-ping` and a larger `--timeout`.
 
@@ -152,7 +170,8 @@ The tests run entirely against `127.0.0.1` with throw-away local servers. They a
 ## Roadmap
 
 - [x] JSON and CSV output
-- [x] English / Arabic interface
+- [x] English / Arabic / Hebrew interface
+- [x] Service and version detection, TLS certificate details, findings and `--fail-on`
 - [x] Unit and end-to-end tests, CI
 - [x] 3D interface, Linux applications-menu launcher and the Nemla identity
 - [ ] Scan history inside the interface
