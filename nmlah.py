@@ -10,33 +10,76 @@ sudo python3 nemla.py -t 192.168.1.0/24
 sudo python3 nemla.py -t 192.168.1.1-50 -p 1-1000
 sudo python3 nemla.py -t 192.168.1.10 --top-ports
 
-ملاحظة: استخدمها فقط على شبكات لديك صلاحية صريحة لفحصها.
+ملاحظة:
+استخدمها فقط على شبكات لديك صلاحية صريحة لفحصها.
 """
 
 import argparse
 import ipaddress
 import socket
-import struct
 import subprocess
 import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from queue import Queue
+
+# ---------------------------------------------------------------------------
+# Colorama
+# ---------------------------------------------------------------------------
 
 try:
-    from scapy.all import ARP, Ether, srp, sr1, IP, ICMP, conf as scapy_conf
+    from colorama import init, Fore
+
+    init(autoreset=True)
+    HAVE_COLORAMA = True
+
+except ImportError:
+    HAVE_COLORAMA = False
+
+    class DummyFore:
+        RED = ""
+        YELLOW = ""
+        CYAN = ""
+        WHITE = ""
+        GREEN = ""
+        MAGENTA = ""
+
+    Fore = DummyFore()
+
+
+# ---------------------------------------------------------------------------
+# Scapy
+# ---------------------------------------------------------------------------
+
+try:
+    from scapy.all import (
+        ARP,
+        Ether,
+        srp,
+        sr1,
+        IP,
+        ICMP,
+    )
+
     HAVE_SCAPY = True
+
 except Exception:
     HAVE_SCAPY = False
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 
 VERSION = "1.0"
 
 TOP_PORTS = [
-    21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 445, 465, 587,
-    993, 995, 1080, 1433, 1521, 1723, 2049, 3306, 3389, 5432, 5900, 5985,
-    6379, 8000, 8080, 8443, 8888, 9200, 11211, 27017, 3128, 6000, 8081,
+    21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143,
+    443, 445, 465, 587, 993, 995, 1080, 1433, 1521,
+    1723, 2049, 3306, 3389, 5432, 5900, 5985, 6379,
+    8000, 8080, 8443, 8888, 9200, 11211, 27017, 3128,
+    6000, 8081,
 ]
 
 COMMON_SERVICE_NAMES = {
@@ -83,34 +126,58 @@ COMMON_SERVICE_NAMES = {
 PRINT_LOCK = threading.Lock()
 
 
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
 def log(msg):
     with PRINT_LOCK:
         ts = datetime.now().strftime("%H:%M:%S")
         print(f"[{ts}] {msg}")
 
 
-def banner():
-    art = "\n".join([
-        " __ _ ",
-        " / \\.--.-./ \\ نملة | Nemla Network Recon",
-        " \\ - - / v{ver}".format(ver=VERSION),
-        " .---'-- --'---.",
-        "اكتشاف أجهزة + فحص منافذ",
-        "تخمين نظام التشغيل + تقرير HTML",
-        " \\ - - /",
-        " '---.__ __.---'",
-        " `-. . .-`",
-    ])
+# ---------------------------------------------------------------------------
+# Banner
+# ---------------------------------------------------------------------------
 
-    print(art)
+def banner():
+    print(Fore.RED + r"""
+ _  _                 _       _
+| \| | __ _ _ __ ___ | | __ _| |__
+| .` |/ _` | '_ ` _ \| |/ _` | '_ \
+| |\ | (_| | | | | | | | (_| | | | |
+|_| \_|\__,_|_| |_| |_|_|\__,_|_| |_|
+""")
+
+    print(
+        Fore.YELLOW +
+        f"[-] Namlah Network Tool v{VERSION}"
+    )
+
+    print(
+        Fore.CYAN +
+        "[-] Network Reconnaissance & Discovery Tool"
+    )
+
+    print(
+        Fore.WHITE +
+        "[-] Device Discovery | Port Scanning | OS Detection"
+    )
+
+    print(
+        Fore.RED +
+        "-" * 58
+    )
+
+    print()
 
 
 # ---------------------------------------------------------------------------
-# Host discovery
+# Host Discovery
 # ---------------------------------------------------------------------------
 
 def arp_scan(subnet):
-    """ARP-based discovery for a local subnet using scapy."""
+    """ARP-based discovery for a local subnet using Scapy."""
 
     log(f"بدء اكتشاف الأجهزة على {subnet} (ARP)...")
 
@@ -118,7 +185,8 @@ def arp_scan(subnet):
 
     try:
         ans, _ = srp(
-            Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=str(subnet)),
+            Ether(dst="ff:ff:ff:ff:ff:ff") /
+            ARP(pdst=str(subnet)),
             timeout=3,
             retry=1,
             verbose=0,
@@ -127,26 +195,40 @@ def arp_scan(subnet):
         for _, rcv in ans:
             hosts.append({
                 "ip": rcv.psrc,
-                "mac": rcv.hwsrc
+                "mac": rcv.hwsrc,
             })
 
     except PermissionError:
-        log("صلاحيات غير كافية لـ ARP scan. جرب sudo.")
+        log(
+            "صلاحيات غير كافية لـ ARP scan. "
+            "جرب sudo."
+        )
         return None
 
     except Exception as e:
-        log(f"فشل ARP scan ({e})، سيتم الرجوع إلى TCP/ICMP.")
+        log(
+            f"فشل ARP scan ({e})، "
+            "سيتم الرجوع إلى TCP/ICMP."
+        )
         return None
 
     return hosts
 
 
-def tcp_ping(ip, ports=(80, 443, 22, 445, 3389), timeout=0.6):
+def tcp_ping(
+    ip,
+    ports=(80, 443, 22, 445, 3389),
+    timeout=0.6,
+):
     """Fallback host-up check using TCP."""
 
     for port in ports:
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            with socket.socket(
+                socket.AF_INET,
+                socket.SOCK_STREAM
+            ) as s:
+
                 s.settimeout(timeout)
 
                 if s.connect_ex((str(ip), port)) == 0:
@@ -162,12 +244,31 @@ def icmp_ping(ip):
     """OS ping fallback."""
 
     try:
-        param = "-n" if sys.platform.lower().startswith("win") else "-c"
+        is_windows = sys.platform.lower().startswith("win")
+
+        param = "-n" if is_windows else "-c"
+
+        if is_windows:
+            command = [
+                "ping",
+                param,
+                "1",
+                "-w",
+                "1000",
+                str(ip),
+            ]
+        else:
+            command = [
+                "ping",
+                param,
+                "1",
+                "-W",
+                "1",
+                str(ip),
+            ]
 
         result = subprocess.run(
-            ["ping", param, "1", "-W", "1", str(ip)]
-            if not sys.platform.lower().startswith("win")
-            else ["ping", param, "1", "-w", "1000", str(ip)],
+            command,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=2,
@@ -179,7 +280,10 @@ def icmp_ping(ip):
         return False
 
 
-def discover_hosts(network, max_workers=100):
+def discover_hosts(
+    network,
+    max_workers=100,
+):
     """Try ARP first, then ICMP + TCP."""
 
     discovered = {}
@@ -191,13 +295,19 @@ def discover_hosts(network, max_workers=100):
             for h in arp_results:
                 discovered[h["ip"]] = {
                     "mac": h["mac"],
-                    "method": "ARP"
+                    "method": "ARP",
                 }
 
-            log(f"تم اكتشاف {len(discovered)} جهاز")
+            log(
+                f"تم اكتشاف {len(discovered)} جهاز"
+            )
+
             return discovered
 
-    log(f"بدء اكتشاف الأجهزة على {network} باستخدام ICMP + TCP...")
+    log(
+        f"بدء اكتشاف الأجهزة على {network} "
+        "باستخدام ICMP + TCP..."
+    )
 
     ip_list = (
         list(network.hosts())
@@ -211,28 +321,85 @@ def discover_hosts(network, max_workers=100):
 
         return None
 
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+    with ThreadPoolExecutor(
+        max_workers=max_workers
+    ) as ex:
+
         futures = {
             ex.submit(probe, ip): ip
             for ip in ip_list
         }
 
         for fut in as_completed(futures):
-            res = fut.result()
+            try:
+                res = fut.result()
+
+            except Exception:
+                continue
 
             if res:
                 discovered[res] = {
                     "mac": None,
-                    "method": "ICMP/TCP"
+                    "method": "ICMP/TCP",
                 }
 
-    log(f"تم اكتشاف {len(discovered)} جهاز")
+    log(
+        f"تم اكتشاف {len(discovered)} جهاز"
+    )
+
+    return discovered
+
+
+def discover_hosts_from_list(
+    ip_list,
+    max_workers=100,
+):
+    """Discover hosts from an explicit IP list."""
+
+    discovered = {}
+
+    def probe(ip):
+        if icmp_ping(ip) or tcp_ping(ip):
+            return ip
+
+        return None
+
+    log(
+        f"بدء اكتشاف الأجهزة على "
+        f"{len(ip_list)} عنوان محدد..."
+    )
+
+    with ThreadPoolExecutor(
+        max_workers=max_workers
+    ) as ex:
+
+        futures = {
+            ex.submit(probe, ip): ip
+            for ip in ip_list
+        }
+
+        for fut in as_completed(futures):
+            try:
+                res = fut.result()
+
+            except Exception:
+                continue
+
+            if res:
+                discovered[res] = {
+                    "mac": None,
+                    "method": "ICMP/TCP",
+                }
+
+    log(
+        f"تم اكتشاف {len(discovered)} جهاز"
+    )
 
     return discovered
 
 
 # ---------------------------------------------------------------------------
-# Port scanning
+# Port Scanning
 # ---------------------------------------------------------------------------
 
 def parse_ports(port_spec):
@@ -242,23 +409,52 @@ def parse_ports(port_spec):
         part = part.strip()
 
         if "-" in part:
-            a, b = part.split("-")
-            ports.update(range(int(a), int(b) + 1))
+            a, b = part.split("-", 1)
+
+            a = int(a)
+            b = int(b)
+
+            if a < 1 or b > 65535 or a > b:
+                raise ValueError(
+                    f"نطاق منافذ غير صالح: {part}"
+                )
+
+            ports.update(
+                range(a, b + 1)
+            )
 
         elif part:
-            ports.add(int(part))
+            port = int(part)
+
+            if not 1 <= port <= 65535:
+                raise ValueError(
+                    f"منفذ غير صالح: {port}"
+                )
+
+            ports.add(port)
 
     return sorted(ports)
 
 
-def grab_banner(ip, port, timeout=1.0):
+def grab_banner(
+    ip,
+    port,
+    timeout=1.0,
+):
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        with socket.socket(
+            socket.AF_INET,
+            socket.SOCK_STREAM
+        ) as s:
+
             s.settimeout(timeout)
             s.connect((ip, port))
 
             try:
-                s.send(b"HEAD / HTTP/1.0\r\n\r\n")
+                s.send(
+                    b"HEAD / HTTP/1.0\r\n\r\n"
+                )
+
             except Exception:
                 pass
 
@@ -274,20 +470,40 @@ def grab_banner(ip, port, timeout=1.0):
         return ""
 
 
-def scan_port(ip, port, timeout=0.7, grab=True):
+def scan_port(
+    ip,
+    port,
+    timeout=0.7,
+    grab=True,
+):
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        with socket.socket(
+            socket.AF_INET,
+            socket.SOCK_STREAM
+        ) as s:
+
             s.settimeout(timeout)
 
-            if s.connect_ex((ip, port)) == 0:
+            if s.connect_ex(
+                (ip, port)
+            ) == 0:
+
                 service = COMMON_SERVICE_NAMES.get(
                     port,
-                    "unknown"
+                    "unknown",
                 )
 
-                b = grab_banner(ip, port) if grab else ""
+                b = (
+                    grab_banner(ip, port)
+                    if grab
+                    else ""
+                )
 
-                return port, service, b
+                return (
+                    port,
+                    service,
+                    b,
+                )
 
     except Exception:
         pass
@@ -295,28 +511,45 @@ def scan_port(ip, port, timeout=0.7, grab=True):
     return None
 
 
-def scan_host_ports(ip, ports, max_workers=200):
+def scan_host_ports(
+    ip,
+    ports,
+    max_workers=200,
+):
     open_ports = []
 
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+    with ThreadPoolExecutor(
+        max_workers=max_workers
+    ) as ex:
+
         futures = [
-            ex.submit(scan_port, ip, p)
+            ex.submit(
+                scan_port,
+                ip,
+                p,
+            )
             for p in ports
         ]
 
         for fut in as_completed(futures):
-            res = fut.result()
+            try:
+                res = fut.result()
+
+            except Exception:
+                continue
 
             if res:
                 open_ports.append(res)
 
-    open_ports.sort(key=lambda x: x[0])
+    open_ports.sort(
+        key=lambda x: x[0]
+    )
 
     return open_ports
 
 
 # ---------------------------------------------------------------------------
-# OS fingerprinting
+# OS Fingerprinting
 # ---------------------------------------------------------------------------
 
 def guess_os_by_ttl(ip):
@@ -327,7 +560,7 @@ def guess_os_by_ttl(ip):
             pkt = sr1(
                 IP(dst=ip) / ICMP(),
                 timeout=1,
-                verbose=0
+                verbose=0,
             )
 
             if pkt:
@@ -338,13 +571,24 @@ def guess_os_by_ttl(ip):
 
     if ttl is None:
         try:
-            param = "-n" if sys.platform.lower().startswith("win") else "-c"
+            is_windows = (
+                sys.platform
+                .lower()
+                .startswith("win")
+            )
+
+            param = "-n" if is_windows else "-c"
 
             out = subprocess.run(
-                ["ping", param, "1", str(ip)],
+                [
+                    "ping",
+                    param,
+                    "1",
+                    str(ip),
+                ],
                 capture_output=True,
                 text=True,
-                timeout=2
+                timeout=2,
             ).stdout
 
             for line in out.splitlines():
@@ -363,35 +607,57 @@ def guess_os_by_ttl(ip):
         return "غير معروف", None
 
     if ttl <= 64:
-        return "Linux / Unix / macOS", ttl
+        return (
+            "Linux / Unix / macOS",
+            ttl,
+        )
 
     elif ttl <= 128:
         return "Windows", ttl
 
     else:
-        return "Network device (Cisco/Solaris)", ttl
+        return (
+            "Network device (Cisco/Solaris)",
+            ttl,
+        )
 
 
-def refine_os_guess(base_guess, open_ports):
-    port_nums = {p[0] for p in open_ports}
+def refine_os_guess(
+    base_guess,
+    open_ports,
+):
+    port_nums = {
+        p[0]
+        for p in open_ports
+    }
 
-    if 3389 in port_nums or (445 in port_nums and 135 in port_nums):
+    if (
+        3389 in port_nums
+        or (
+            445 in port_nums
+            and 135 in port_nums
+        )
+    ):
         return "Windows (RDP/SMB مكتشفة)"
 
-    if 22 in port_nums and base_guess.startswith("Linux"):
+    if (
+        22 in port_nums
+        and base_guess.startswith("Linux")
+    ):
         return "Linux / Unix (SSH مكتشف)"
 
     return base_guess
 
 
 # ---------------------------------------------------------------------------
-# HTML report
+# HTML Report
 # ---------------------------------------------------------------------------
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 
 <head>
+
 <meta charset="UTF-8">
 
 <title>تقرير نملة - {target}</title>
@@ -417,15 +683,29 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 body {{
     background: var(--bg);
     color: var(--text);
-    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    font-family:
+        'Segoe UI',
+        Tahoma,
+        Arial,
+        sans-serif;
+
     margin: 0;
     padding: 0 0 60px 0;
 }}
 
 header {{
-    background: linear-gradient(135deg, #1a1611, #0d0d0d);
-    border-bottom: 2px solid var(--ant-orange);
+    background:
+        linear-gradient(
+            135deg,
+            #1a1611,
+            #0d0d0d
+        );
+
+    border-bottom:
+        2px solid var(--ant-orange);
+
     padding: 28px 32px;
+
     display: flex;
     align-items: center;
     gap: 18px;
@@ -596,7 +876,9 @@ footer {{
 
 <div>
 
-<h1>تقرير نملة — Nemla Recon Report</h1>
+<h1>
+تقرير نملة — Nemla Recon Report
+</h1>
 
 <p>
 الهدف: {target}
@@ -624,7 +906,9 @@ footer {{
 
 <div class="stat">
 <div class="num">{ports_scanned}</div>
-<div class="label">منفذ تم فحصه لكل جهاز</div>
+<div class="label">
+منفذ تم فحصه لكل جهاز
+</div>
 </div>
 
 </div>
@@ -636,8 +920,13 @@ footer {{
 </div>
 
 <footer>
-🐜 تم توليده بواسطة نملة (Nemla) v{version}
-— استخدام مسؤول فقط على شبكات مصرح بفحصها
+
+🐜 تم توليده بواسطة نملة
+(Nemla) v{version}
+
+— استخدام مسؤول فقط على شبكات
+مصرح بفحصها
+
 </footer>
 
 </body>
@@ -655,9 +944,13 @@ HOST_CARD_TEMPLATE = """
 
 <span class="host-ip">{ip}</span>
 
-<span class="badge up">Active</span>
+<span class="badge up">
+Active
+</span>
 
-<span class="badge os">{os_guess}</span>
+<span class="badge os">
+{os_guess}
+</span>
 
 </div>
 
@@ -673,18 +966,28 @@ HOST_CARD_TEMPLATE = """
 """
 
 
-def render_host_card(ip, mac, os_guess, open_ports):
-
-    mac_line = f"MAC: {mac}" if mac else ""
+def render_host_card(
+    ip,
+    mac,
+    os_guess,
+    open_ports,
+):
+    mac_line = (
+        f"MAC: {mac}"
+        if mac
+        else ""
+    )
 
     if open_ports:
 
         rows = "\n".join(
-            f'<tr>'
+            f"<tr>"
             f'<td class="port">{p}</td>'
             f'<td class="service">{svc}</td>'
-            f'<td class="banner">{(b or "-")}</td>'
-            f'</tr>'
+            f'<td class="banner">'
+            f"{(b or '-')}"
+            f"</td>"
+            f"</tr>"
             for p, svc, b in open_ports
         )
 
@@ -706,7 +1009,10 @@ def render_host_card(ip, mac, os_guess, open_ports):
 
         ports_table = """
 <div class="no-ports">
-لا توجد منافذ مفتوحة ضمن النطاق المفحوص
+
+لا توجد منافذ مفتوحة
+ضمن النطاق المفحوص
+
 </div>
 """
 
@@ -714,7 +1020,7 @@ def render_host_card(ip, mac, os_guess, open_ports):
         ip=ip,
         mac_line=mac_line,
         os_guess=os_guess,
-        ports_table=ports_table
+        ports_table=ports_table,
     )
 
 
@@ -723,15 +1029,14 @@ def generate_report(
     results,
     ports_scanned_count,
     duration,
-    out_path
+    out_path,
 ):
-
     host_cards = "\n".join(
         render_host_card(
             ip,
             data["mac"],
             data["os_guess"],
-            data["open_ports"]
+            data["open_ports"],
         )
         for ip, data in results.items()
     )
@@ -743,21 +1048,36 @@ def generate_report(
 
     html = HTML_TEMPLATE.format(
         target=target,
+
         scan_time=datetime.now().strftime(
             "%Y-%m-%d %H:%M:%S"
         ),
+
         duration=f"{duration:.1f}",
+
         host_count=len(results),
+
         total_open_ports=total_open,
+
         ports_scanned=ports_scanned_count,
+
         host_cards=(
             host_cards
-            or '<p style="color:#9a9184">لا توجد أجهزة لعرضها</p>'
+            or
+            '<p style="color:#9a9184">'
+            "لا توجد أجهزة لعرضها"
+            "</p>"
         ),
+
         version=VERSION,
     )
 
-    with open(out_path, "w", encoding="utf-8") as f:
+    with open(
+        out_path,
+        "w",
+        encoding="utf-8",
+    ) as f:
+
         f.write(html)
 
     return out_path
@@ -770,47 +1090,52 @@ def generate_report(
 def main():
 
     parser = argparse.ArgumentParser(
-        description="نملة — أداة استطلاع شبكة شاملة"
+        description=(
+            "نملة — أداة استطلاع شبكة شاملة"
+        )
     )
 
     parser.add_argument(
         "-t",
         "--target",
         required=True,
-        help="IP / CIDR / نطاق"
+        help="IP / CIDR / نطاق",
     )
 
     parser.add_argument(
         "-p",
         "--ports",
         default=None,
-        help="نطاق المنافذ مثال: 1-1000 أو 22,80,443"
+        help=(
+            "نطاق المنافذ مثال: "
+            "1-1000 أو 22,80,443"
+        ),
     )
 
     parser.add_argument(
         "--top-ports",
         action="store_true",
-        help="فحص أهم المنافذ الشائعة فقط"
+        help="فحص أهم المنافذ الشائعة فقط",
     )
 
     parser.add_argument(
         "-o",
         "--output",
         default="nemla_report.html",
-        help="مسار ملف تقرير HTML"
+        help="مسار ملف تقرير HTML",
     )
 
     parser.add_argument(
         "--no-os",
         action="store_true",
-        help="تخطي تخمين نظام التشغيل"
+        help="تخطي تخمين نظام التشغيل",
     )
 
     parser.add_argument(
         "--threads",
         type=int,
         default=150,
-        help="عدد الخيوط للفحص المتوازي"
+        help="عدد الخيوط للفحص المتوازي",
     )
 
     args = parser.parse_args()
@@ -821,9 +1146,16 @@ def main():
 
     target_raw = args.target
 
+    # -----------------------------------------------------------------------
+    # Target parsing
+    # -----------------------------------------------------------------------
+
     try:
 
-        if "-" in target_raw and "/" not in target_raw:
+        if (
+            "-" in target_raw
+            and "/" not in target_raw
+        ):
 
             start_ip = target_raw.split("-")[0]
             end = target_raw.split("-")[-1]
@@ -838,70 +1170,118 @@ def main():
                 start_ip.split(".")[:-1]
             )
 
+            if (
+                start_last_octet < 0
+                or end_last_octet > 255
+                or start_last_octet > end_last_octet
+            ):
+                raise ValueError(
+                    "نطاق IP غير صالح"
+                )
+
             ip_list = [
                 f"{prefix}.{i}"
                 for i in range(
                     start_last_octet,
-                    end_last_octet + 1
+                    end_last_octet + 1,
                 )
             ]
 
             network = ipaddress.ip_network(
                 f"{prefix}.0/24",
-                strict=False
+                strict=False,
             )
 
             hosts_map = discover_hosts_from_list(
-                ip_list
+                ip_list,
+                max_workers=args.threads,
             )
 
         else:
 
             network = ipaddress.ip_network(
                 target_raw,
-                strict=False
+                strict=False,
             )
 
             hosts_map = discover_hosts(
                 network,
-                max_workers=args.threads
+                max_workers=args.threads,
             )
 
     except ValueError as e:
 
-        log(f"صيغة هدف غير صالحة: {e}")
+        log(
+            f"صيغة هدف غير صالحة: {e}"
+        )
+
         sys.exit(1)
+
+    # -----------------------------------------------------------------------
+    # No hosts
+    # -----------------------------------------------------------------------
 
     if not hosts_map:
 
         log(
             "لم يتم اكتشاف أي جهاز. "
-            "تأكد من الاتصال بالشبكة أو جرب sudo."
+            "تأكد من الاتصال بالشبكة "
+            "أو جرب sudo."
         )
 
         sys.exit(0)
 
-    ports = (
-        parse_ports(args.ports)
-        if args.ports
-        else TOP_PORTS
-    )
+    # -----------------------------------------------------------------------
+    # Ports
+    # -----------------------------------------------------------------------
+
+    try:
+
+        if args.top_ports:
+            ports = TOP_PORTS
+
+        elif args.ports:
+            ports = parse_ports(
+                args.ports
+            )
+
+        else:
+            ports = TOP_PORTS
+
+    except ValueError as e:
+
+        log(
+            f"خطأ في المنافذ: {e}"
+        )
+
+        sys.exit(1)
 
     log(
-        f"نطاق المنافذ: {len(ports)} منفذ لكل جهاز"
+        f"نطاق المنافذ: "
+        f"{len(ports)} منفذ لكل جهاز"
     )
+
+    # -----------------------------------------------------------------------
+    # Scan hosts
+    # -----------------------------------------------------------------------
 
     results = {}
 
     for ip, meta in hosts_map.items():
 
-        log(f"فحص {ip} ...")
+        log(
+            f"فحص {ip} ..."
+        )
 
         open_ports = scan_host_ports(
             ip,
             ports,
-            max_workers=args.threads
+            max_workers=args.threads,
         )
+
+        # ---------------------------------------------------------------
+        # OS Detection
+        # ---------------------------------------------------------------
 
         if args.no_os:
 
@@ -910,15 +1290,22 @@ def main():
 
         else:
 
-            base_guess, ttl = guess_os_by_ttl(ip)
+            base_guess, ttl = (
+                guess_os_by_ttl(ip)
+            )
 
             os_guess = refine_os_guess(
                 base_guess,
-                open_ports
+                open_ports,
             )
 
-        if not args.no_os and ttl:
-            os_guess += f" (TTL={ttl})"
+        if (
+            not args.no_os
+            and ttl
+        ):
+            os_guess += (
+                f" (TTL={ttl})"
+            )
 
         results[ip] = {
             "mac": meta.get("mac"),
@@ -927,9 +1314,14 @@ def main():
         }
 
         log(
-            f"↳ {len(open_ports)} منفذ مفتوح | "
+            f"↳ {len(open_ports)} "
+            f"منفذ مفتوح | "
             f"OS: {os_guess}"
         )
+
+    # -----------------------------------------------------------------------
+    # Generate report
+    # -----------------------------------------------------------------------
 
     duration = time.time() - start
 
@@ -938,11 +1330,12 @@ def main():
         results,
         len(ports),
         duration,
-        args.output
+        args.output,
     )
 
     log(
-        f"اكتمل الفحص خلال {duration:.1f} ثانية"
+        f"اكتمل الفحص خلال "
+        f"{duration:.1f} ثانية"
     )
 
     log(
@@ -950,51 +1343,9 @@ def main():
     )
 
 
-def discover_hosts_from_list(
-    ip_list,
-    max_workers=100
-):
-
-    discovered = {}
-
-    def probe(ip):
-
-        if icmp_ping(ip) or tcp_ping(ip):
-            return ip
-
-        return None
-
-    log(
-        f"بدء اكتشاف الأجهزة على "
-        f"{len(ip_list)} عنوان محدد..."
-    )
-
-    with ThreadPoolExecutor(
-        max_workers=max_workers
-    ) as ex:
-
-        futures = {
-            ex.submit(probe, ip): ip
-            for ip in ip_list
-        }
-
-        for fut in as_completed(futures):
-
-            res = fut.result()
-
-            if res:
-
-                discovered[res] = {
-                    "mac": None,
-                    "method": "ICMP/TCP"
-                }
-
-    log(
-        f"تم اكتشاف {len(discovered)} جهاز"
-    )
-
-    return discovered
-
+# ---------------------------------------------------------------------------
+# Entry Point
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
 
@@ -1004,8 +1355,9 @@ if __name__ == "__main__":
     ):
 
         log(
-            "تنبيه: بعض الميزات مثل ARP scan وICMP "
-            "تحتاج صلاحيات root. جرب: "
+            "تنبيه: بعض الميزات مثل "
+            "ARP scan وICMP تحتاج "
+            "صلاحيات root. جرب: "
             "sudo python3 nemla.py ..."
         )
 
