@@ -39,6 +39,30 @@ Use it in scripts and CI: the command below exits with code 3 when a finding at 
 python3 nemla.py -t 10.0.0.0/24 --fail-on high
 ```
 
+## What changed since last time
+
+Nemla remembers your scans (the newest 60, in your Nemla data folder) and compares each new scan with the previous one of the same target: hosts that appeared or vanished, ports that opened or closed, services whose product or version changed, a different system guess, and findings that appeared or were resolved. In the 3D interface this shows as a card above the host list, new hosts pulse blue and vanished hosts stay behind as dashed outlines.
+
+On the command line:
+
+```bash
+python3 nemla.py -t 192.168.1.0/24 --json today.json
+```
+
+```bash
+python3 nemla.py --diff yesterday.json today.json
+```
+
+`--diff` prints the changes, and with `--fail-on-change` it exits with code 3 if something appeared (a host, an open port or a finding), which suits scheduled checks.
+
+To keep an eye on a network, let Nemla scan again and again and report each change (stop with Ctrl+C):
+
+```bash
+python3 nemla.py -t 192.168.1.0/24 --watch 15m --watch-log changes.jsonl
+```
+
+The interval can be written as `90s`, `15m` or `2h` (at least 10 seconds). Every round is saved, so the next run continues from the last one.
+
 ## Guard mode (defensive)
 
 Nemla can also watch a network instead of scanning it. Guard mode looks for three signs that something suspicious is going on inside your network:
@@ -147,6 +171,10 @@ python3 nemla.py -t 192.168.1.10 --no-ping
 | `--no-os` | Skip OS fingerprinting |
 | `--no-banner` | Skip banner grabbing and service detection (versions, TLS, web titles) |
 | `--fail-on LEVEL` | Exit with code 3 if any finding is at `low`, `medium` or `high` level or above |
+| `--watch INTERVAL` | Scan again every `90s`, `15m` or `2h` and report what changed; stop with Ctrl+C |
+| `--watch-log FILE` | Append every change found by `--watch` to a JSON-lines file |
+| `--diff OLD.json NEW.json` | Compare two scans saved with `--json` and print what changed |
+| `--fail-on-change` | With `--diff`: exit with code 3 if a host, an open port or a finding appeared |
 | `--guard` | Watch the network for suspicious activity and print alerts until Ctrl+C |
 | `--guard-ports LIST` | Decoy ports to open (default `2222,2323,5901,8888,3307`) |
 | `--guard-interval SECONDS` | Seconds between device checks (default 60, `0` means decoy ports only) |
@@ -196,7 +224,7 @@ The tests run entirely against `127.0.0.1` with throw-away local servers. They a
 - [x] English / Arabic / Hebrew interface
 - [x] Service and version detection, TLS certificate details, findings and `--fail-on`
 - [x] Guard mode: decoy ports, unknown devices and ARP changes
-- [ ] Scan history and "what changed" comparison
+- [x] Scan history, "what changed" comparison, `--diff` and `--watch`
 - [x] Unit and end-to-end tests, CI
 - [x] 3D interface, Linux applications-menu launcher and the Nemla identity
 - [ ] Scan history inside the interface

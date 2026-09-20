@@ -130,6 +130,15 @@
     </section>
 
     <section class="pane" id="pane-hosts" role="tabpanel" hidden>
+      <div class="diff-card" id="diffCard" hidden>
+        <div class="diff-head">
+          <b data-i18n="diff.title">Since the last scan</b>
+          <button type="button" class="icon-btn" id="diffClose" data-i18n-aria="insp.close" data-i18n-title="insp.close"><svg><use href="#i-x"/></svg></button>
+        </div>
+        <p class="diff-sub" id="diffSub"></p>
+        <div class="diff-chips" id="diffChips"></div>
+        <ul class="diff-list" id="diffList"></ul>
+      </div>
       <div class="filter"><span class="input-wrap"><svg><use href="#i-search"/></svg><input id="hostFilter" type="text" data-i18n-ph="hosts.filter"></span></div>
       <ul class="host-list" id="hostList"></ul>
       <p class="empty" id="hostEmpty" data-i18n="hosts.empty">No hosts yet. Start a scan to send out the first ant.</p>

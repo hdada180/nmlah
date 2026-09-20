@@ -351,6 +351,25 @@ details.adv[open] summary svg { transform: rotate(180deg); }
 .tip b { font-family: var(--font-mono); display: block; font-size: 13px; direction: ltr; text-align: start; }
 .tip span { color: var(--ink-dim); }
 
+/* what changed since the last scan */
+.diff-card { margin-bottom: 14px; padding: 12px; border-radius: 16px; background: rgba(76, 194, 255, .06); border: 1px solid rgba(76, 194, 255, .28); animation: rise .35s cubic-bezier(.2, .8, .2, 1); }
+.diff-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.diff-head b { font-size: 14px; }
+.diff-head .icon-btn { width: 30px; height: 30px; border-radius: 9px; }
+.diff-sub { margin: 0 0 8px; font-size: 12px; color: var(--ink-faint); }
+.diff-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.diff-chip { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; background: rgba(255, 255, 255, .06); }
+.diff-chip.new { color: var(--sky); }
+.diff-chip.gone { color: var(--slate); }
+.diff-chip.opened { color: var(--gold); }
+.diff-chip.closed { color: var(--mint); }
+.diff-chip.bad { color: var(--rose); }
+.diff-none { margin: 2px 0 0; color: var(--mint); font-weight: 600; font-size: 13px; }
+.diff-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 190px; overflow: auto; font-size: 12.5px; scrollbar-width: thin; }
+.diff-list li { padding: 5px 8px; border-radius: 8px; background: rgba(255, 255, 255, .03); cursor: pointer; }
+.diff-list li:hover { background: rgba(255, 122, 26, .10); }
+.diff-list li b { font-family: var(--font-mono); font-weight: 700; direction: ltr; unicode-bidi: isolate; }
+
 /* guard mode */
 .count.alarm { background: var(--rose); color: #fff; }
 .guard-chip { cursor: pointer; color: var(--mint); border-color: rgba(62, 230, 180, .4); }

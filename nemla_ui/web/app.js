@@ -31,7 +31,7 @@
     selected: null, tab: 'scan', logs: [], stage: 'discovery',
     prog: { done: 0, total: 0, hostIndex: 0, hostTotal: 0, pdone: 0, ptotal: 0 }, focusIp: null, lostShown: false,
     guard: { running: false, decoys: [], failed: {}, learning: true }, guardEs: null, guardDemo: null,
-    alerts: [], alertLast: 0
+    alerts: [], alertLast: 0, diff: null
   };
 
   /* ---------------------------------------------------------------- link */
@@ -332,6 +332,7 @@
     state.prog = { done: 0, total: 0, hostIndex: 0, hostTotal: 0, pdone: 0, ptotal: 0 };
     scene.clear();
     restoreAlarms();
+    state.diff = null; renderDiff();
     renderLog(); renderHosts(true); renderInspector();
   }
 
@@ -399,6 +400,8 @@
     state.hosts.forEach((h) => { if (h.state === 'scanning') { h.state = 'up'; scene.setHostState(h.ip, 'up'); } });
     state.openPorts = Array.from(state.hosts.values()).reduce((n, h) => n + h.open_ports.length, 0);
     state.finalSeconds = ev.meta.duration;
+    state.diff = ev.diff || null;
+    renderDiff(); applyDiffMarks();
     state.phase = ev.meta.cancelled ? 'stopped' : 'done';
     state.stage = 'ports';
     scene.setPhase('done');
@@ -493,6 +496,50 @@
   }
 
   /* ------------------------------------------------------------------- ui */
+
+  /* --------------------------------------------- what changed since last scan */
+
+  function renderDiff() {
+    const card = $('#diffCard'), d = state.diff;
+    if (!d) { card.hidden = true; return; }
+    card.hidden = false;
+    const s = d.summary || {};
+    $('#diffSub').textContent = d.against && d.against.scan_time ? t('diff.sub', { time: d.against.scan_time }) : '';
+    const chips = $('#diffChips'), list = $('#diffList');
+    list.replaceChildren();
+    if (!s.changed) { chips.replaceChildren(el('p', { class: 'diff-none', text: t('diff.none') })); return; }
+    const parts = [];
+    [['new', 'diff.chip.new', s.new_hosts], ['gone', 'diff.chip.gone', s.gone_hosts], ['opened', 'diff.chip.opened', s.opened_ports],
+      ['closed', 'diff.chip.closed', s.closed_ports], ['bad', 'diff.chip.findings', s.new_findings]].forEach(([cls, key, n]) => {
+      if (n) parts.push(el('span', { class: 'diff-chip ' + cls, text: t(key, { n }) }));
+    });
+    chips.replaceChildren(...parts);
+    const rows = [];
+    const row = (ip, text) => {
+      const li = el('li', {}, el('b', { text: ip }), document.createTextNode('  ' + text));
+      li.addEventListener('click', () => { if (state.hosts.has(ip)) scene.select(ip); });
+      rows.push(li);
+    };
+    (d.new_hosts || []).forEach((ip) => row(ip, t('diff.new_host')));
+    (d.gone_hosts || []).forEach((ip) => row(ip, t('diff.gone_host')));
+    Object.keys(d.hosts || {}).forEach((ip) => {
+      const e = d.hosts[ip];
+      e.opened.forEach((port) => row(ip, t('diff.opened', { port })));
+      e.closed.forEach((port) => row(ip, t('diff.closed', { port })));
+      e.changed.forEach((c) => row(ip, t('diff.service', { port: c.port, old: c.from, new: c.to })));
+      if (e.os) row(ip, t('diff.os', { old: e.os.from, new: e.os.to }));
+      e.new_findings.forEach((f) => row(ip, t('diff.new_finding', { sev: t('sev.' + f.severity), text: findingText(f) })));
+      e.resolved_findings.forEach((f) => row(ip, t('diff.resolved', { sev: t('sev.' + f.severity), text: findingText(f) })));
+    });
+    list.replaceChildren(...rows.slice(0, 80));
+  }
+
+  function applyDiffMarks() {
+    const d = state.diff;
+    if (!d) return;
+    (d.new_hosts || []).forEach((ip) => scene.setHostNew(ip));
+    (d.gone_hosts || []).forEach((ip) => scene.addGhost(ip));
+  }
 
   function setTab(name) {
     state.tab = name;
@@ -733,6 +780,7 @@
     $$('.brand-ar, .ar-name').forEach((n) => { n.lang = I.lang === 'he' ? 'he' : 'ar'; });
     renderLegend(); renderStatus(); renderStats(); renderHosts(true); renderInspector(); renderLog(); updateInsets();
     renderGuardStatus(); alertEls.forEach((li, id) => { alertEls.delete(id); }); renderAlerts(); renderAlertCount();
+    renderDiff();
   }
 
   function applyInfo() {
@@ -806,6 +854,7 @@
     $('#guardChip').addEventListener('click', () => setTab('guard'));
     $('#btnSimulate').addEventListener('click', simulateIntrusion);
     $('#blockClose').addEventListener('click', () => $('#blockDlg').close());
+    $('#diffClose').addEventListener('click', () => { state.diff = null; renderDiff(); });
     window.addEventListener('resize', updateInsets);
     new ResizeObserver(updateInsets).observe($('#dock'));
 

@@ -81,6 +81,27 @@
     [F('http_plain', 'low', 8080), VER(22, 'OpenSSH', '9.6p1')])
   ];
 
+  // what a second scan of the same network would report, so the demo shows the comparison too
+  const DIFF_NEW = ['192.168.1.91', '192.168.1.200'];
+  const nonInfo = (h) => h.findings.filter((f) => f.severity !== 'info').length;
+  const DIFF = {
+    against: { id: 'demo-previous', scan_time: '2026-09-19 22:10:04' },
+    new_hosts: DIFF_NEW, gone_hosts: ['192.168.1.250'],
+    hosts: {
+      '192.168.1.4': { opened: [6379], closed: [], os: null, resolved_findings: [],
+        changed: [{ port: 80, from: 'nginx 1.22.1', to: 'nginx 1.24.0' }], new_findings: [F('redis_open', 'high', 6379)] },
+      '192.168.1.18': { opened: [23], closed: [80], changed: [], os: null, resolved_findings: [],
+        new_findings: [F('telnet', 'high', 23)] },
+      '192.168.1.21': { opened: [], closed: [], changed: [], os: null,
+        new_findings: [F('tls_expiring', 'medium', 993, { days: 12 })], resolved_findings: [F('tls_selfsigned', 'low', 993)] }
+    }
+  };
+  DIFF.summary = {
+    new_hosts: DIFF.new_hosts.length, gone_hosts: DIFF.gone_hosts.length, opened_ports: 2, closed_ports: 1,
+    changed_services: 1, resolved_findings: 1, worse: true, changed: true,
+    new_findings: 3 + HOSTS.filter((h) => DIFF_NEW.includes(h.ip)).reduce((n, h) => n + nonInfo(h), 0)
+  };
+
   function shuffled(list) {
     const a = list.slice();
     for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
@@ -139,7 +160,7 @@
       const counts = { info: 0, low: 0, medium: 0, high: 0 };
       HOSTS.forEach((h) => h.findings.forEach((f) => { counts[f.severity] += 1; }));
       emit({
-        type: 'done', hosts: HOSTS,
+        type: 'done', hosts: HOSTS, diff: DIFF,
         meta: { target: '192.168.1.0/24', scan_time: new Date().toISOString().slice(0, 19).replace('T', ' '), duration: duration, ports_scanned: 38, discovered: total, cancelled: false, findings: counts }
       });
     });
