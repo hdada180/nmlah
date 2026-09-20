@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-orange)](LICENSE)
 [![CI](https://github.com/hdada180/nmlah/actions/workflows/ci.yml/badge.svg)](https://github.com/hdada180/nmlah/actions/workflows/ci.yml)
 
-**English** · [العربية](README.ar.md)
+**English** · [العربية](README.ar.md) · [עברית](README.he.md)
 
 Nemla (Arabic: **نملة**, "ant") is a small, dependency-free network reconnaissance tool written in Python. Point it at an IP, a hostname, a range or a subnet and it finds live hosts, scans TCP ports, identifies what is running (products, versions, TLS certificates), makes a best-guess at the operating system, tells you in plain words what looks risky, and writes a clean **HTML report** (plus JSON and CSV for scripting). The interface and the report are available in **English, Arabic and Hebrew**.
 
@@ -227,7 +227,7 @@ The tests run entirely against `127.0.0.1` with throw-away local servers. They a
 - [x] Scan history, "what changed" comparison, `--diff` and `--watch`
 - [x] Unit and end-to-end tests, CI
 - [x] 3D interface, Linux applications-menu launcher and the Nemla identity
-- [ ] Scan history inside the interface
+- [ ] Browse and reopen past scans inside the interface (the comparison card and `/api/history` already exist)
 - [ ] IPv6 support
 - [x] MAC vendor names for well-known platforms (a small list; the full IEEE registry is still open)
 - [ ] Scan profiles and a config file
