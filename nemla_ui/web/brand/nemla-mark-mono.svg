@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Nemla">
+  <g fill="currentColor">
+    <ellipse cx="128" cy="62" rx="19" ry="17"/>
+    <ellipse cx="128" cy="109" rx="16" ry="23"/>
+    <path d="M128 138c22 0 34 20 34 40 0 24-14 42-34 46-20-4-34-22-34-46 0-20 12-40 34-40z"/>
+    <circle cx="58" cy="104" r="7"/><circle cx="48" cy="144" r="7"/><circle cx="64" cy="190" r="7"/>
+    <circle cx="198" cy="104" r="7"/><circle cx="208" cy="144" r="7"/><circle cx="192" cy="190" r="7"/>
+    <circle cx="82" cy="24" r="6"/><circle cx="174" cy="24" r="6"/>
+  </g>
+  <g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M114 98 80 80 58 104M112 110 72 114 48 144M114 124 80 148 64 190"/>
+    <path d="M142 98 176 80 198 104M144 110 184 114 208 144M142 124 176 148 192 190"/>
+    <path d="M119 50 102 28 82 24M137 50 154 28 174 24" stroke-width="5.5"/>
+  </g>
+</svg>

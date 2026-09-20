@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Nemla">
+  <defs>
+    <linearGradient id="ni-bg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1B2030"/>
+      <stop offset="1" stop-color="#090B10"/>
+    </linearGradient>
+    <radialGradient id="ni-glow" cx="128" cy="132" r="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF7A1A" stop-opacity=".42"/>
+      <stop offset="1" stop-color="#FF7A1A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ni-ember" x1="60" y1="20" x2="200" y2="228" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFC46B"/>
+      <stop offset=".5" stop-color="#FF7A1A"/>
+      <stop offset="1" stop-color="#E8460C"/>
+    </linearGradient>
+    <clipPath id="ni-clip"><rect width="256" height="256" rx="58"/></clipPath>
+  </defs>
+  <rect width="256" height="256" rx="58" fill="url(#ni-bg)"/>
+  <g clip-path="url(#ni-clip)">
+    <rect width="256" height="256" fill="url(#ni-glow)"/>
+    <g fill="none" stroke="#FFFFFF" stroke-opacity=".05" stroke-width="2">
+      <path d="M-20 60 40 26l60 34v68l-60 34-60-34zM100 60l60-34 60 34v68l-60 34-60-34z"/>
+      <path d="M40 196l60-34 60 34v56l-60 34-60-34zM160 196l60-34 60 34v56l-60 34-60-34z"/>
+    </g>
+  </g>
+  <g transform="translate(128 130) scale(.8) translate(-128 -122)">
+    <g fill="url(#ni-ember)">
+      <ellipse cx="128" cy="62" rx="19" ry="17"/>
+      <ellipse cx="128" cy="109" rx="16" ry="23"/>
+      <path d="M128 138c22 0 34 20 34 40 0 24-14 42-34 46-20-4-34-22-34-46 0-20 12-40 34-40z"/>
+      <circle cx="58" cy="104" r="7"/><circle cx="48" cy="144" r="7"/><circle cx="64" cy="190" r="7"/>
+      <circle cx="198" cy="104" r="7"/><circle cx="208" cy="144" r="7"/><circle cx="192" cy="190" r="7"/>
+      <circle cx="82" cy="24" r="6"/><circle cx="174" cy="24" r="6"/>
+    </g>
+    <g fill="none" stroke="url(#ni-ember)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M114 98 80 80 58 104M112 110 72 114 48 144M114 124 80 148 64 190"/>
+      <path d="M142 98 176 80 198 104M144 110 184 114 208 144M142 124 176 148 192 190"/>
+      <path d="M119 50 102 28 82 24M137 50 154 28 174 24" stroke-width="5.5"/>
+    </g>
+  </g>
+  <rect x="1" y="1" width="254" height="254" rx="57" fill="none" stroke="#FFFFFF" stroke-opacity=".10" stroke-width="2"/>
+</svg>
