@@ -21,9 +21,16 @@
   const TLS_OK = { version: 'TLSv1.3', subject: 'app.lab.local', issuer: "Let's Encrypt", not_after: '2027-04-02', days_left: 194, self_signed: false };
   const F = (id, severity, port, params) => ({ id: id, severity: severity, port: port || null, params: params || {} });
   const VER = (port, product, version) => F('version', 'info', port, { product: product, version: version });
+  // the real scan names the maker of well-known prefixes; the demo mirrors the two it uses
+  const vendorOf = (mac) => {
+    const hex = (mac || '').replace(/[^0-9a-f]/gi, '').toUpperCase();
+    if (hex.startsWith('525400')) return 'QEMU/KVM (libvirt)';
+    if (/^(B827EB|DCA632|D83ADD|E45F01)/.test(hex)) return 'Raspberry Pi Foundation';
+    return null;
+  };
   const H = (last, os, ports, mac, findings) => ({
     ip: '192.168.1.' + last, os_guess: os, ttl: /TTL=(\d+)/.test(os) ? +/TTL=(\d+)/.exec(os)[1] : null,
-    mac: mac || null, discovery: 'ARP', open_ports: ports, findings: findings || []
+    mac: mac || null, vendor: vendorOf(mac), discovery: 'ARP', open_ports: ports, findings: findings || []
   });
 
   const HOSTS = [

@@ -91,6 +91,32 @@ def test_known_device_changing_address_is_not_an_alert():
     assert guard.evaluate_sweep({B: MAC_A}, state, GW) == []  # same hardware, new DHCP lease
 
 
+@pytest.mark.parametrize("mac, expected", [
+    ("52:54:00:12:34:56", True), ("02:42:ac:11:00:02", True), ("aa:bb:cc:dd:ee:ff", True),
+    ("dc:a6:32:5e:11:07", False), ("08:00:27:11:22:33", False), ("00:0c:29:ab:cd:ef", False),
+    ("", False), (None, False), ("z", False)])
+def test_mac_is_local(mac, expected):
+    assert guard.mac_is_local(mac) is expected
+
+
+def test_new_device_alert_says_whether_the_address_is_locally_administered():
+    state = guard.new_state()
+    guard.evaluate_sweep({GW: MAC_GW}, state, GW)
+    alerts = guard.evaluate_sweep({GW: MAC_GW, A: "52:54:00:12:34:56", B: MAC_B}, state, GW)
+    assert {a["mac"]: a["detail"]["local"] for a in alerts} == {"52:54:00:12:34:56": True, MAC_B: False}
+
+
+def test_guard_names_the_vendor_of_new_devices_only():
+    log = guard.AlertLog()
+    sweeps = [{GW: MAC_GW}, {GW: MAC_GW, A: "b8:27:eb:11:22:33", X: MAC_X}]
+    g = guard.Guard(log, ports=[], network=None, gateway=GW, sweep=lambda: sweeps.pop(0),
+                    vendor_lookup=lambda mac: "Raspberry Pi Foundation" if mac.startswith("b8:27:eb") else None)
+    g.sweep_once()
+    alerts = g.sweep_once()
+    assert {a["mac"]: a["detail"].get("vendor") for a in alerts} == {
+        "b8:27:eb:11:22:33": "Raspberry Pi Foundation", MAC_X: None}
+
+
 def test_arp_binding_change_on_the_gateway_is_high():
     state = guard.new_state()
     guard.evaluate_sweep({GW: MAC_GW, A: MAC_A}, state, GW)
@@ -446,6 +472,22 @@ def test_every_alert_kind_has_a_sentence():
                 assert text and "{" not in text
         finally:
             nemla._LANG = "en"
+
+
+def test_new_device_sentence_names_the_vendor_or_explains_local_addresses():
+    base = {"kind": "new_device", "src_ip": X, "mac": MAC_X}
+    for lang in nemla.STRINGS:
+        nemla._LANG = lang
+        try:
+            plain = nemla.alert_text({**base, "detail": {}})
+            vendor = nemla.alert_text({**base, "detail": {"vendor": "VMware", "local": True}})
+            local = nemla.alert_text({**base, "detail": {"local": True}})
+            note = nemla.t("g_new_device_local")
+        finally:
+            nemla._LANG = "en"
+        assert "VMware" in vendor and vendor.startswith(plain)
+        assert note not in vendor  # a named maker replaces the generic note
+        assert local == plain + note and "VMware" not in local
 
 
 def test_guard_command_rejects_bad_ports(capsys):

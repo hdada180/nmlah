@@ -280,6 +280,7 @@
     badges.replaceChildren(...[h.os_guess].filter(Boolean).map((x) => el('span', { class: 'badge', text: x })));
     const kv = $('#inspKv'), rows = [];
     if (h.mac) rows.push(['insp.mac', h.mac]);
+    if (h.vendor) rows.push(['insp.vendor', h.vendor]);
     if (h.ttl) rows.push(['TTL', String(h.ttl)]);
     if (h.method) rows.push(['insp.via', h.method]);
     kv.replaceChildren(...rows.flatMap(([k, v]) => [el('dt', { text: k.startsWith('insp.') ? t(k) : k }), el('dd', { text: v })]));
@@ -534,8 +535,14 @@
     return t('guard.k.' + (kind === 'arp_change' && gateway ? 'arp_gateway' : kind));
   }
   function alertText(a) {
-    return t('guard.t.' + (a.kind === 'arp_change' && a.detail.gateway ? 'arp_gateway' : a.kind),
-      Object.assign({ src: a.src_ip, ip: a.src_ip, mac: a.mac }, a.detail || {}));
+    const d = a.detail || {};
+    let text = t('guard.t.' + (a.kind === 'arp_change' && d.gateway ? 'arp_gateway' : a.kind),
+      Object.assign({ src: a.src_ip, ip: a.src_ip, mac: a.mac }, d));
+    if (a.kind === 'new_device') {
+      if (d.vendor) text += t('guard.t.new_device_vendor', { vendor: d.vendor });
+      else if (d.local) text += t('guard.t.new_device_local');
+    }
+    return text;
   }
   function alertNextStep(kind) {
     if (kind === 'tripwire') return t('guard.n.tripwire');

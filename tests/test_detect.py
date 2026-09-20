@@ -413,6 +413,38 @@ def test_cli_scan_in_hebrew(servers, tmp_path, capsys):
     assert "סורק" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("mac, expected", [
+    ("00:0C:29:AB:CD:EF", "VMware"), ("00-50-56-01-02-03", "VMware"),
+    ("08:00:27:11:22:33", "Oracle VirtualBox"), ("52:54:00:12:34:56", "QEMU/KVM (libvirt)"),
+    ("b8:27:eb:11:22:33", "Raspberry Pi Foundation"), ("DC:A6:32:aa:bb:cc", "Raspberry Pi Trading"),
+    ("02:42:ac:11:00:02", "Docker (bridge network)"),
+    ("aa:bb:cc:dd:ee:ff", None), ("", None), (None, None), ("00:0C", None), ("not a mac", None)])
+def test_mac_vendor(mac, expected):
+    assert nemla.mac_vendor(mac) == expected
+
+
+def test_scan_results_carry_the_vendor(servers, monkeypatch):
+    port = servers(lambda conn: conn.close())
+    for mac, expected in (("b8:27:eb:11:22:33", "Raspberry Pi Foundation"), ("aa:bb:cc:dd:ee:ff", None)):
+        monkeypatch.setattr(nemla, "discover_hosts",
+                            lambda ips, mac=mac, **kw: {"127.0.0.1": {"mac": mac, "method": "ARP"}})
+        hosts, _ = nemla.run_scan("127.0.0.1", ["127.0.0.1"], [port], no_os=True)
+        assert hosts[0]["mac"] == mac and hosts[0]["vendor"] == expected
+
+
+def test_vendor_is_shown_in_every_report_format():
+    host = sample_host()
+    host["mac"], host["vendor"] = "52:54:00:12:34:56", "QEMU/KVM (libvirt)"
+    meta = {"target": "t", "scan_time": "now", "duration": 1.0, "ports_scanned": 2}
+    assert "MAC: 52:54:00:12:34:56 (QEMU/KVM (libvirt))" in nemla.render_html(meta, [host])
+    assert json.loads(nemla.json_text(meta, [host]))["hosts"][0]["vendor"] == "QEMU/KVM (libvirt)"
+    header, first = nemla.csv_text([host]).splitlines()[:2]
+    assert header.split(",")[:3] == ["ip", "mac", "vendor"]
+    assert first.split(",")[1:3] == ["52:54:00:12:34:56", "QEMU/KVM (libvirt)"]
+    host["vendor"] = "<script>alert(1)</script>"  # never trusted blindly in the page
+    assert "<script>alert(1)" not in nemla.render_html(meta, [host])
+
+
 def test_hebrew_is_an_offered_language():
     assert "he" in nemla.STRINGS and "he" in nemla.RTL_LANGS
     parser = nemla.build_parser()

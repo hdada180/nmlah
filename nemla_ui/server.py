@@ -241,7 +241,8 @@ class App:
             self.guard = guard_mod.Guard(
                 self.alerts, ports=ports, host=self.guard_host,
                 network=None if network.startswith("127.") else network, interval=interval,
-                state_path=self.data_dir / "guard.json")
+                state_path=self.data_dir / "guard.json",
+                vendor_lookup=getattr(self.engine, "mac_vendor", None))
             return self.guard.start()
 
     def stop_guard(self) -> dict:

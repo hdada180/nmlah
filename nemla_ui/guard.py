@@ -208,6 +208,17 @@ def normalize_mac(mac: str):
     return ":".join(f"{o:02x}" for o in octets)
 
 
+def mac_is_local(mac: str) -> bool:
+    """True if the 'locally administered' bit is set in the first octet.
+
+    Such an address was not necessarily assigned to a hardware maker: virtual
+    machines, containers, and phones using a private Wi-Fi address per network
+    all use them. It is a fact about the bits, not proof of anything.
+    """
+    digits = re.sub(r"[^0-9A-Fa-f]", "", mac or "")
+    return len(digits) >= 2 and bool(int(digits[:2], 16) & 0x02)
+
+
 def parse_arp_table(text: str) -> dict:
     """{ip: mac} from /proc/net/arp, `ip neigh`, or `arp -a` (Windows, macOS, BSD)."""
     table = {}
@@ -359,7 +370,7 @@ def evaluate_sweep(table: dict, state: dict, gateway=None, now=None) -> list:
         elif mac not in state["unknown"]:
             state["unknown"][mac] = {"ip": ip, "first_seen": now}
             alerts.append({"kind": "new_device", "severity": "medium", "src_ip": ip, "mac": mac,
-                           "detail": {}})
+                           "detail": {"local": mac_is_local(mac)}})
     by_mac = {}
     for ip, mac in table.items():
         by_mac.setdefault(mac, []).append(ip)
@@ -418,8 +429,9 @@ class Guard:
 
     def __init__(self, log: AlertLog, ports=DEFAULT_DECOYS, host: str = "0.0.0.0",
                  network=None, interval: float = 60.0, state_path=None, sweep=None,
-                 trusted_ips=(), ignore_local: bool = True, gateway=None):
+                 trusted_ips=(), ignore_local: bool = True, gateway=None, vendor_lookup=None):
         self.log = log
+        self.vendor_lookup = vendor_lookup  # optional: mac -> vendor name, or None
         self.ports = tuple(ports)
         self.host = host
         self.network = network
@@ -494,6 +506,12 @@ class Guard:
             alerts = evaluate_sweep(table, self.state, self.gateway)
             if self.state_path:
                 save_state(self.state_path, self.state)
+        if self.vendor_lookup:
+            for alert in alerts:
+                if alert["kind"] == "new_device" and alert.get("mac"):
+                    vendor = self.vendor_lookup(alert["mac"])
+                    if vendor:
+                        alert["detail"]["vendor"] = vendor
         return [self.log.add(a) for a in alerts]
 
     def _loop(self) -> None:

@@ -29,6 +29,7 @@ Besides open ports, Nemla identifies what is running and says what it means:
 
 - **Products and versions** from banners and light probes (OpenSSH, nginx, Apache, vsftpd, Postfix, MySQL, PostgreSQL, Redis and more), plus web page titles.
 - **TLS details:** protocol version, certificate subject and issuer, expiry date, and whether the certificate is self-signed.
+- **Who made it.** When ARP discovery gives a MAC address, Nemla names the platform behind well-known prefixes (VMware, VirtualBox, Hyper-V, Xen, QEMU/KVM, Docker, Raspberry Pi). This is a small hand-picked list, not the full IEEE registry, so most addresses show no name.
 - **Findings** in plain words, each rated high, medium, low or info: cleartext services such as Telnet and FTP, databases and remote-access ports that are reachable, Redis, Memcached or Elasticsearch answering without a password, expired or soon-to-expire certificates, obsolete TLS versions, websites without HTTPS. Exposure on a public IP address is rated higher than on a private network.
 - Findings are observations only. Nemla never logs in, guesses passwords or exploits anything.
 
@@ -43,7 +44,7 @@ python3 nemla.py -t 10.0.0.0/24 --fail-on high
 Nemla can also watch a network instead of scanning it. Guard mode looks for three signs that something suspicious is going on inside your network:
 
 - **Decoy ports.** Nemla opens a few ports that no legitimate device or person has any reason to touch (2222, 2323, 5901, 8888 and 3307 by default). Whatever connects to one is probing your network, and Nemla records who it was and what it sent. This gives very few false alarms.
-- **Unknown devices.** The first check learns your devices by their hardware (MAC) address. After that, a device that was not there before raises an alert.
+- **Unknown devices.** The first check learns your devices by their hardware (MAC) address. After that, a device that was not there before raises an alert. When the address belongs to a well-known platform the alert names it (for example a Raspberry Pi or a virtual machine), and it says when the address is "locally administered", which is what virtual machines, containers and phones with a private Wi-Fi address use.
 - **ARP changes.** If an address suddenly answers from a different device, above all your gateway, that is the classic trace of ARP spoofing (a man-in-the-middle).
 
 Guard only watches and alerts. It never attacks back, never scans other machines on its own, and never changes your firewall: for a device you want to block it shows the exact command and leaves running it to you.
@@ -200,7 +201,7 @@ The tests run entirely against `127.0.0.1` with throw-away local servers. They a
 - [x] 3D interface, Linux applications-menu launcher and the Nemla identity
 - [ ] Scan history inside the interface
 - [ ] IPv6 support
-- [ ] MAC vendor lookup
+- [x] MAC vendor names for well-known platforms (a small list; the full IEEE registry is still open)
 - [ ] Scan profiles and a config file
 - [ ] Richer service detection (plugin-based)
 - [ ] Interactive HTML report (sorting, filtering)

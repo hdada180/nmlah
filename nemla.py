@@ -147,6 +147,8 @@ STRINGS = {
         "f_version": "{product} {version} on port {port} announces its exact version to anyone who connects.",
         "g_tripwire": "{src} connected to decoy port(s) {ports} ({count} time(s)). Nothing legitimate uses these ports.",
         "g_new_device": "New device on the network: {ip} ({mac}). It was not in the trusted list.",
+        "g_new_device_vendor": " It looks like a {vendor} device.",
+        "g_new_device_local": " This is a locally administered address, used by virtual machines, containers and phones with a private Wi-Fi address, so no maker can be named.",
         "g_arp_change": "{ip} now answers from {new_mac} instead of {old_mac}. This can be a sign of ARP spoofing.",
         "g_arp_gateway": "The gateway {ip} changed from {old_mac} to {new_mac}. This is a classic sign of ARP spoofing.",
         "g_arp_dup": "{mac} answers for several addresses including the gateway {ip}: {ips}.",
@@ -222,6 +224,8 @@ STRINGS = {
         "f_version": "{product} {version} على المنفذ {port} يعلن نسخته بدقة لأي جهة تتصل به.",
         "g_tripwire": "اتصل {src} بمنفذ الطُّعم {ports} ({count} مرة). لا توجد أي خدمة سليمة تستخدم هذه المنافذ.",
         "g_new_device": "جهاز جديد على الشبكة: {ip} ({mac}). لم يكن في قائمة الأجهزة الموثوقة.",
+        "g_new_device_vendor": " يبدو أنه جهاز {vendor}.",
+        "g_new_device_local": " هذا عنوان معيَّن محلياً، تستخدمه الأجهزة الافتراضية والحاويات والجوالات ذات عنوان Wi-Fi خاص، لذلك لا يمكن تسمية الشركة المصنّعة.",
         "g_arp_change": "{ip} صار يردّ من {new_mac} بدل {old_mac}. قد يدل ذلك على انتحال ARP.",
         "g_arp_gateway": "تغيّرت بوابة الشبكة {ip} من {old_mac} إلى {new_mac}. هذه علامة كلاسيكية على انتحال ARP.",
         "g_arp_dup": "{mac} يردّ عن عدة عناوين منها البوابة {ip}: {ips}.",
@@ -297,6 +301,8 @@ STRINGS = {
         "f_version": "{product} {version} בפורט {port} מכריז על הגרסה המדויקת שלו לכל מי שמתחבר.",
         "g_tripwire": "{src} התחבר לפורטי הפיתיון {ports} ({count} פעמים). שום שירות לגיטימי לא משתמש בפורטים האלה.",
         "g_new_device": "מכשיר חדש ברשת: {ip} ({mac}). הוא לא היה ברשימת המכשירים המהימנים.",
+        "g_new_device_vendor": " נראה כמו מכשיר של {vendor}.",
+        "g_new_device_local": " זו כתובת שהוגדרה מקומית, בה משתמשים מכונות וירטואליות, קונטיינרים וטלפונים עם כתובת Wi-Fi פרטית, ולכן אי אפשר לנקוב ביצרן.",
         "g_arp_change": "{ip} עונה כעת מ-{new_mac} במקום {old_mac}. זה עשוי להעיד על התחזות ARP.",
         "g_arp_gateway": "שער הרשת {ip} השתנה מ-{old_mac} ל-{new_mac}. זה סימן קלאסי להתחזות ARP.",
         "g_arp_dup": "{mac} עונה עבור כמה כתובות, כולל שער הרשת {ip}: {ips}.",
@@ -454,6 +460,41 @@ def parse_ports(spec: str) -> list:
 # ---------------------------------------------------------------------------
 # Host discovery
 # ---------------------------------------------------------------------------
+
+# A small hand-picked list of prefixes for devices common on home and lab
+# networks (virtual machines, containers, Raspberry Pi). It is NOT the full
+# IEEE registry: an address that is not listed simply has no vendor shown.
+# Each entry is (hex digits, name); the digits are the first octets of the MAC.
+_MAC_PREFIXES = (
+    ("000569", "VMware"),
+    ("000C29", "VMware"),
+    ("001C14", "VMware"),
+    ("005056", "VMware"),
+    ("080027", "Oracle VirtualBox"),
+    ("001C42", "Parallels"),
+    ("00155D", "Microsoft Hyper-V"),
+    ("00163E", "Xen"),
+    ("525400", "QEMU/KVM (libvirt)"),
+    ("B827EB", "Raspberry Pi Foundation"),
+    ("DCA632", "Raspberry Pi Trading"),
+    ("D83ADD", "Raspberry Pi Trading"),
+    ("E45F01", "Raspberry Pi Trading"),
+    ("0242", "Docker (bridge network)"),  # Docker derives the rest of the address from the IP
+)
+
+
+def mac_vendor(mac):
+    """Name of the vendor or platform behind a MAC address, or None if unknown."""
+    if not mac:
+        return None
+    digits = re.sub(r"[^0-9A-Fa-f]", "", str(mac)).upper()
+    if len(digits) < 6:
+        return None
+    for prefix, name in _MAC_PREFIXES:
+        if digits.startswith(prefix):
+            return name
+    return None
+
 
 def _is_local(ip: str) -> bool:
     addr = ipaddress.ip_address(ip)
@@ -1151,6 +1192,7 @@ def run_scan(target: str, ips: list, ports: list, *, no_ping: bool = False,
                     "discovery": hosts_map[ip].get("method"),
                     "os_guess": os_guess, "ttl": ttl, "open_ports": open_ports,
                 }
+                host["vendor"] = mac_vendor(host["mac"])
                 host["findings"] = assess_host(host)
                 hosts.append(host)
                 send({"type": "host_done", "host": host})
@@ -1324,6 +1366,8 @@ def render_host_card(host: dict) -> str:
         body = f'<div class="empty">{_e(t("r_no_ports"))}</div>'
     body += _findings_html(host)
     mac = f"MAC: {_e(host['mac'])}" if host.get("mac") else ""
+    if mac and host.get("vendor"):
+        mac += f" ({_e(host['vendor'])})"
     return (
         '<div class="host-card"><div class="host-header"><div>'
         f'<span class="host-ip">{_e(host["ip"])}</span>'
@@ -1381,9 +1425,9 @@ def json_text(meta: dict, hosts: list) -> str:
 def csv_text(hosts: list) -> str:
     buf = io.StringIO(newline="")
     w = csv.writer(buf)
-    w.writerow(["ip", "mac", "os_guess", "ttl", "port", "service", "banner", "product", "version"])
+    w.writerow(["ip", "mac", "vendor", "os_guess", "ttl", "port", "service", "banner", "product", "version"])
     for h in hosts:
-        base = [h["ip"], h.get("mac") or "", h["os_guess"], h.get("ttl") or ""]
+        base = [h["ip"], h.get("mac") or "", h.get("vendor") or "", h["os_guess"], h.get("ttl") or ""]
         if not h["open_ports"]:
             w.writerow(base + ["", "", "", "", ""])
         for p in h["open_ports"]:
@@ -1484,7 +1528,12 @@ def alert_text(alert: dict) -> str:
         return t("g_tripwire", src=alert["src_ip"], count=detail.get("count", 1),
                  ports=", ".join(str(p) for p in detail.get("ports", [])))
     if kind == "new_device":
-        return t("g_new_device", ip=alert["src_ip"], mac=alert["mac"])
+        text = t("g_new_device", ip=alert["src_ip"], mac=alert["mac"])
+        if detail.get("vendor"):  # a named maker is more useful than the generic note
+            text += t("g_new_device_vendor", vendor=detail["vendor"])
+        elif detail.get("local"):
+            text += t("g_new_device_local")
+        return text
     if kind == "arp_change":
         return t("g_arp_gateway" if detail.get("gateway") else "g_arp_change", ip=alert["src_ip"],
                  old_mac=detail.get("old_mac"), new_mac=detail.get("new_mac"))
@@ -1513,7 +1562,7 @@ def run_guard(args) -> int:
     _, network = local_network_hint()
     network = None if network.startswith("127.") else network
     watcher = guard.Guard(alerts, ports=ports, network=network, interval=max(0.0, args.guard_interval),
-                          state_path=guard.data_dir() / "guard.json")
+                          state_path=guard.data_dir() / "guard.json", vendor_lookup=mac_vendor)
     status = watcher.start()
     for port, reason in status["failed"].items():
         log(t("g_port_failed", port=port, reason=reason))
