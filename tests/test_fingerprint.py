@@ -453,7 +453,8 @@ def tls_server(tcp_server, tmp_path, maximum=None, minimum=None, body=b"<title>S
         ctx.maximum_version = maximum
     if minimum is not None:
         ctx.minimum_version = minimum
-        ctx.set_ciphers("ALL:@SECLEVEL=0")
+        if minimum < ssl.TLSVersion.TLSv1_2:
+            ctx.set_ciphers("ALL:@SECLEVEL=0")
 
     def handler(conn):
         try:
@@ -484,7 +485,9 @@ def test_tls_certificate_is_read_without_touching_the_disk(tcp_server, tmp_path,
 
 
 def test_tls_12_only_server_is_not_reported_as_obsolete(tcp_server, tmp_path):
-    port = tls_server(tcp_server, tmp_path, maximum=ssl.TLSVersion.TLSv1_2)
+    # a TLS 1.2-only server: without the minimum, older OpenSSL builds (Python 3.8 on Windows) also accept TLS 1.0/1.1,
+    # and reporting that legacy support is then the correct answer
+    port = tls_server(tcp_server, tmp_path, maximum=ssl.TLSVersion.TLSv1_2, minimum=ssl.TLSVersion.TLSv1_2)
     tls = scan(port)["tls"]
     assert tls["version"] == "TLSv1.2" and "legacy" not in tls
     ids = {f["id"] for f in nemla.assess_host({"ip": "10.0.0.5", "open_ports": [{"port": 443, "service": "HTTPS", "banner": "", "tls": tls}]})}

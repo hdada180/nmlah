@@ -42,6 +42,11 @@ nemla_ui = ["web/*.*", "web/brand/*"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+# a background thread that dies with an exception must fail the test that started it, not just print a warning
+filterwarnings = [
+    "error::pytest.PytestUnhandledThreadExceptionWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]
 markers = [
     "integration: needs a real Samba/xrdp server (run by the `integration` CI job; skipped unless NEMLA_INTEGRATION=1)",
     "privileged: needs root and Scapy (run by the `privileged` CI job; skipped otherwise)",

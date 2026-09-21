@@ -201,10 +201,12 @@
   </aside>
 
   <section class="panel hud" id="hud" data-state="idle" data-tilt>
-    <div class="stat"><span class="k" data-i18n="hud.hosts">Hosts</span><b id="statHosts">0</b></div>
-    <div class="stat"><span class="k" data-i18n="hud.open">Open ports</span><b id="statPorts">0</b></div>
-    <div class="stat"><span class="k" data-i18n="hud.findings">Findings</span><b id="statFindings">0</b></div>
-    <div class="stat"><span class="k" data-i18n="hud.time">Elapsed</span><b id="statTime">0.0s</b></div>
+    <div class="stats">
+      <div class="stat"><span class="k" data-i18n="hud.hosts">Hosts</span><b id="statHosts">0</b></div>
+      <div class="stat"><span class="k" data-i18n="hud.open">Open ports</span><b id="statPorts">0</b></div>
+      <div class="stat"><span class="k" data-i18n="hud.findings">Findings</span><b id="statFindings">0</b></div>
+      <div class="stat"><span class="k" data-i18n="hud.time">Elapsed</span><b id="statTime">0.0s</b></div>
+    </div>
     <div class="progress">
       <div class="phase"><span class="demo-badge" id="demoBadge" hidden data-i18n="demo.badge">DEMO</span> <span id="phaseText" data-i18n="phase.idle">Ready when you are</span></div>
       <div class="bar"><i id="barFill"></i></div>

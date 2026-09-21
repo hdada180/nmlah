@@ -330,6 +330,21 @@ def test_bounded_server_drops_connections_beyond_the_ceiling(tmp_path, monkeypat
         httpd.server_close()
 
 
+def test_no_second_server_can_share_the_ui_port(tmp_path):
+    """On Windows SO_REUSEADDR would let another process bind the same port and receive our connections."""
+    app = server.App(nemla, data_dir=tmp_path)
+    first = server.BoundedServer(("127.0.0.1", 0), server.make_handler(app))
+    port = first.server_address[1]
+    try:
+        with pytest.raises(OSError):
+            server.BoundedServer(("127.0.0.1", port), server.make_handler(app)).server_close()
+    finally:
+        first.server_close()
+    # once the first one is gone the port can be used again (a restart must not wait for TIME_WAIT)
+    again = server.BoundedServer(("127.0.0.1", port), server.make_handler(app))
+    again.server_close()
+
+
 def test_window_and_ui_settings(ui):
     app, port = ui
     info = json.loads(call(port, "/api/info", token=app.token)[2])

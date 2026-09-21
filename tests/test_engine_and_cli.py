@@ -27,7 +27,9 @@ def test_65535_ports_on_several_hosts_stay_within_the_limits(monkeypatch):
             peak[0] = max(peak[0], running[0])
             per_host_running[ip] = per_host_running.get(ip, 0) + 1
             per_host_peak[ip] = max(per_host_peak.get(ip, 0), per_host_running[ip])
-        time.sleep(0.0005)
+        # overlap the calls so the concurrency limits are really exercised, but do not sleep every time: Windows
+        # (Python < 3.11) rounds every sleep up to ~15 ms, which turned 196,000 calls into minutes
+        time.sleep(0.001 if port % 97 == 0 else 0)
         with lock:
             running[0] -= 1
             per_host_running[ip] -= 1
@@ -58,7 +60,14 @@ def test_hosts_are_scanned_side_by_side_and_finish_as_soon_as_they_are_done(tcp_
                               emit=events.append)
     kinds = [e["type"] for e in events]
     assert kinds.count("host_start") == 2 and kinds.count("host_done") == 2
-    assert kinds.index("host_start") < kinds.index("port") < kinds.index("host_done")
+    # Per host: it starts, then reports its ports, then is done. (Across hosts the order is a race: only 127.0.0.1
+    # has listeners, and on Linux the closed ports of 127.0.0.2 are refused at once, so that host can finish first.)
+    for ip in ("127.0.0.1", "127.0.0.2"):
+        start = next(i for i, e in enumerate(events) if e["type"] == "host_start" and e["ip"] == ip)
+        done = next(i for i, e in enumerate(events) if e["type"] == "host_done" and e["host"]["ip"] == ip)
+        ports_seen = [i for i, e in enumerate(events) if e["type"] == "port" and e["ip"] == ip]
+        assert start < done and all(start < i < done for i in ports_seen), ip
+    assert any(e["type"] == "port" and e["ip"] == "127.0.0.1" for e in events)
     done_hosts = [e["host"]["ip"] for e in events if e["type"] == "host_done"]
     assert sorted(done_hosts) == ["127.0.0.1", "127.0.0.2"]
     progress = [e for e in events if e["type"] == "progress" and e["phase"] == "ports"]
@@ -102,7 +111,9 @@ def test_a_scan_language_never_leaks_into_other_threads(tcp_server):
 # --------------------------------------------------------------------------
 
 def run(*args, **kw):
-    return subprocess.run([sys.executable, *args], capture_output=True, text=True, cwd=kw.pop("cwd", REPO), timeout=60, **kw)
+    # nemla writes UTF-8 to pipes; decode it as such (the Windows default, cp1252, cannot read Arabic or Hebrew)
+    return subprocess.run([sys.executable, *args], capture_output=True, encoding="utf-8", errors="replace",
+                          cwd=kw.pop("cwd", REPO), timeout=60, **kw)
 
 
 def test_three_ways_to_start_it_report_the_same_version():
@@ -113,7 +124,7 @@ def test_three_ways_to_start_it_report_the_same_version():
 
 
 def test_nemla_py_launcher_works_from_any_directory(tmp_path):
-    result = subprocess.run([sys.executable, str(REPO / "nemla.py"), "--version"], capture_output=True, text=True,
+    result = subprocess.run([sys.executable, str(REPO / "nemla.py"), "--version"], capture_output=True, encoding="utf-8",
                             cwd=tmp_path, timeout=60)
     assert result.returncode == 0 and "nemla" in result.stdout
 

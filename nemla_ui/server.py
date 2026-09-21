@@ -125,11 +125,13 @@ def local_network_hint():
 def is_root() -> bool:
     if hasattr(os, "geteuid"):
         return os.geteuid() == 0
-    try:  # Windows
-        import ctypes
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())
-    except (AttributeError, OSError):
-        return False
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except (AttributeError, OSError):
+            return False
+    return False
 
 
 def _number(body: dict, key: str, default, low, high, kind=float):
@@ -679,10 +681,19 @@ class BoundedServer(ThreadingHTTPServer):
 
     daemon_threads = True
     request_queue_size = 32
+    # Windows: SO_REUSEADDR lets a second process bind the very same port and receive the connections meant
+    # for this one (and the token they carry). There the port is taken exclusively instead; on POSIX
+    # SO_REUSEADDR only skips TIME_WAIT, which is what we want after a restart.
+    allow_reuse_address = not sys.platform.startswith("win")
 
     def __init__(self, *args, **kwargs):
         self._slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
         super().__init__(*args, **kwargs)
+
+    def server_bind(self):
+        if sys.platform.startswith("win") and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
     def process_request(self, request, client_address):
         if not self._slots.acquire(blocking=False):

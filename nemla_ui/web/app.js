@@ -125,10 +125,23 @@
       } else if (b.left + b.width / 2 < w / 2) l = Math.max(l, b.right + 16);
       else r = Math.max(r, w - b.left + 16);
     });
-    if (w <= 900) { top = Math.max(top, 130); if (state.selected) bottom = Math.max(bottom, $('#inspector').getBoundingClientRect().height + 12); }
+    const hud = $('#hud'), legend = $('#legend');
+    if (w <= 900) {
+      // the HUD sits at the top and may have wrapped into two rows: reserve what it really takes
+      top = Math.max(top, Math.ceil(hud.getBoundingClientRect().bottom) + 8);
+      if (state.selected) bottom = Math.max(bottom, $('#inspector').getBoundingClientRect().height + 12);
+    }
     scene.setInsets(l, r, top, bottom);
+    // the colour legend lives in a bottom corner (the left one in right-to-left): the HUD keeps clear of it
+    let hl = l, hr = r;
+    if (w > 900 && legend && getComputedStyle(legend).display !== 'none') {
+      const b = legend.getBoundingClientRect();
+      if (b.left + b.width / 2 < w / 2) hl = Math.max(hl, b.right + 16); else hr = Math.max(hr, w - b.left + 16);
+    }
     const root = document.documentElement.style;
     root.setProperty('--il', (w <= 900 ? 0 : l) + 'px'); root.setProperty('--ir', (w <= 900 ? 0 : r) + 'px');
+    root.setProperty('--hud-l', (w <= 900 ? 0 : hl) + 'px'); root.setProperty('--hud-r', (w <= 900 ? 0 : hr) + 'px');
+    root.setProperty('--hud-h', Math.ceil(hud.getBoundingClientRect().height) + 'px');
   }
 
   /* -------------------------------------------------------------- render */
@@ -771,7 +784,7 @@
   }
 
   function renderBlockCommands(ip, data) {
-    const parts = t('block.title', { ip: ' ' }).split(' ');
+    const parts = t('block.title', { ip: '\u0000' }).split('\u0000');
     $('#blockTitle').replaceChildren(document.createTextNode(parts[0] || ''), el('bdi', { text: ip }), document.createTextNode(parts[1] || ''));
     $('#blockNote').textContent = t('block.note');
     const body = $('#blockBody');
@@ -950,7 +963,8 @@
     $('#blockClose').addEventListener('click', () => $('#blockDlg').close());
     $('#diffClose').addEventListener('click', () => { state.diff = null; renderDiff(); });
     window.addEventListener('resize', updateInsets);
-    new ResizeObserver(updateInsets).observe($('#dock'));
+    const layoutWatcher = new ResizeObserver(updateInsets);   // the legend changes with the language, the HUD with its wrapping
+    ['#dock', '#legend', '#hud'].forEach((id) => layoutWatcher.observe($(id)));
 
     // panels lean gently toward the pointer
     if (!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) {

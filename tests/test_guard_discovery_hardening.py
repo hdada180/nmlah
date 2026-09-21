@@ -379,6 +379,6 @@ def test_wrapper_script_does_not_run_anything_hidden_in_a_path(tmp_path, script)
     launcher.install(data=tmp_path / "data", bin_dir=tmp_path / "bin", python="/bin/echo", script=real)
     wrapper = (tmp_path / "bin" / "nemla").read_text()
     quoted = launcher._shell_quote(script)
-    probe = subprocess.run(["sh", "-c", f"cd {tmp_path}; printf '%s' {quoted}"], capture_output=True, text=True)
+    probe = subprocess.run(["sh", "-c", f"cd {tmp_path}; printf '%s' {quoted}"], capture_output=True, encoding="utf-8")
     assert probe.stdout == script and not (tmp_path / "pwned").exists()
     assert wrapper.startswith("#!/bin/sh") and "exec " in wrapper
