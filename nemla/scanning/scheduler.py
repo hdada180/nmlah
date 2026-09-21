@@ -98,6 +98,9 @@ class Scheduler:
         self.diagnostics = diagnostics
         self.window = max(8, int(window)) if window else self.workers * 4
         self._extra: collections.deque = collections.deque()
+        # what the run did, for the benchmarks and the report: cheap counters, updated by the consumer thread only
+        self.stats: dict = {"workers": self.workers, "submitted": 0, "completed": 0, "failed": 0, "cancelled": 0,
+                      "peak_inflight": 0, "peak_queued": 0, "cancel_seen_after": None}
 
     def add(self, job: Job) -> None:
         """Queue a follow-up job (called by the consumer while iterating `results`)."""
@@ -119,8 +122,13 @@ class Scheduler:
     def results(self, jobs):
         """Run `jobs` and yield (job, result) in completion order.
 
-        Failed jobs yield a JobFailed, jobs dropped by cancellation yield CANCELLED.
+        Failed jobs yield a JobFailed, jobs dropped by cancellation yield CANCELLED. `self.stats` counts what
+        happened: jobs submitted / completed / failed / cancelled, the most jobs ever running at once
+        (`peak_inflight`, which is the number of connections open at once) and the longest waiting line
+        (`peak_queued`: jobs pulled from the source but held back by a busy host, plus follow-up jobs).
         """
+        stats = self.stats
+        started_at = time.monotonic()
         source = iter(jobs)
         deferred: collections.deque = collections.deque()   # pulled from `source` but their key is busy
         inflight: dict = {}
@@ -164,6 +172,14 @@ class Scheduler:
                     inflight[future] = job
                     busy[job.key] += 1
                     future.add_done_callback(finished.put)
+                    stats["submitted"] += 1
+                    if len(inflight) > stats["peak_inflight"]:
+                        stats["peak_inflight"] = len(inflight)
+                queued = len(deferred) + len(self._extra)
+                if queued > stats["peak_queued"]:
+                    stats["peak_queued"] = queued
+                if stats["cancel_seen_after"] is None and self.cancel.is_set():
+                    stats["cancel_seen_after"] = round(time.monotonic() - started_at, 3)
                 if not inflight:
                     return
                 try:
@@ -178,7 +194,9 @@ class Scheduler:
                 for future in batch:
                     job = inflight.pop(future)
                     busy[job.key] -= 1
-                    yield job, future.result()
+                    result = future.result()
+                    stats["cancelled" if result is CANCELLED else "failed" if isinstance(result, JobFailed) else "completed"] += 1
+                    yield job, result
         finally:
             for fut in inflight:
                 fut.cancel()

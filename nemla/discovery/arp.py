@@ -169,12 +169,19 @@ def scapy_arp_scan(ips: list, timeout: int = 2, cancel=None):
     if not HAVE_SCAPY:
         return None
     found = {}
+    options = {}
+    try:      # Layer-2 packets leave through one interface: the one whose route reaches the targets, not just the default one
+        iface = scapy_conf.route.route(ips[0])[0]
+        if iface:
+            options["iface"] = iface
+    except Exception as exc:
+        logger.debug("no interface chosen for the ARP scan: %s", exc)
     try:
         for start in range(0, len(ips), 512):
             if cancel is not None and cancel.is_set():
                 raise Cancelled()
             answered, _ = srp(Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=ips[start:start + 512]),
-                              timeout=timeout, retry=1, verbose=0)
+                              timeout=timeout, retry=1, verbose=0, **options)
             found.update({rcv.psrc: rcv.hwsrc for _, rcv in answered})
     except PermissionError:
         raise

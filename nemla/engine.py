@@ -29,7 +29,7 @@ from .i18n import current_lang, t, use_lang
 from .log import Diagnostics, log, logger
 from .net import ip_sort_key
 from .os_detection import OSGuess, SynProbe, guess_os_detailed, os_display
-from .scanning.scheduler import Job, ProbeBudget, RateLimiter, Scheduler, is_failure
+from .scanning.scheduler import Job, JobFailed, ProbeBudget, RateLimiter, Scheduler, is_failure
 from .scanning.tcp import round_robin, scan_port
 from .scanning.udp import scan_udp_port
 from .targets import format_ports
@@ -110,11 +110,12 @@ def _run(target, ips, ports, opts: ScanOptions, emit, cancel, diagnostics):
 
     # -- scanning ---------------------------------------------------------------
     hosts = []
+    scheduler_stats: dict = {}
     if not hosts_map:
         log(t("no_hosts"))
     elif not cancel.is_set():
         try:
-            hosts = _scan_hosts(hosts_map, ports, opts, budget, cancel, diagnostics, send, syn)
+            hosts = _scan_hosts(hosts_map, ports, opts, budget, cancel, diagnostics, send, syn, scheduler_stats)
         except KeyboardInterrupt:
             cancel.set()
             log(t("interrupted"))
@@ -137,6 +138,7 @@ def _run(target, ips, ports, opts: ScanOptions, emit, cancel, diagnostics):
         "findings": summarize_findings(hosts),
         "warnings": diagnostics.as_list(),
         "probes_used": budget.used,
+        "scheduler": scheduler_stats,
         "options": {"threads": opts.threads, "per_host": opts.per_host, "timeout": opts.timeout,
                     "rate": opts.rate, "max_probes": opts.max_probes, "intensity": opts.intensity,
                     "no_ping": opts.no_ping, "no_os": opts.no_os, "no_banner": opts.no_banner,
@@ -149,7 +151,7 @@ def _run(target, ips, ports, opts: ScanOptions, emit, cancel, diagnostics):
     return hosts, meta
 
 
-def _scan_hosts(hosts_map: dict, ports: list, opts: ScanOptions, budget, cancel, diagnostics, send, syn) -> list:
+def _scan_hosts(hosts_map: dict, ports: list, opts: ScanOptions, budget, cancel, diagnostics, send, syn, stats_out) -> list:
     order = sorted(hosts_map, key=ip_sort_key)
     per_host_jobs = len(ports) + len(opts.udp_ports)
     log(t("port_count", n=len(ports)))
@@ -211,10 +213,14 @@ def _scan_hosts(hosts_map: dict, ports: list, opts: ScanOptions, budget, cancel,
     for job, result in scheduler.results(jobs):
         state = states[job.key]
         if job.kind == "final":
-            if not is_failure(result):
-                finished.append(result)
-                send({"type": "host_done", "host": result})
-                log(t("host_done", n=len(result["open_ports"]), os=result["os_guess"]))
+            record = result
+            if isinstance(result, JobFailed):      # keep what was found: a failing host must not vanish from the report
+                record = _partial_host(state, ports, opts)
+                diagnostics.warn("host_incomplete", f"{state.ip}: OS detection or assessment failed; showing the ports found")
+            if not is_failure(record):
+                finished.append(record)
+                send({"type": "host_done", "host": record})
+                log(t("host_done", n=len(record["open_ports"]), os=record["os_guess"]))
             continue
         bump()
         if not is_failure(result) and result:
@@ -225,4 +231,19 @@ def _scan_hosts(hosts_map: dict, ports: list, opts: ScanOptions, budget, cancel,
         if state.remaining == 0 and not state.finalizing and not cancel.is_set():
             state.finalizing = True
             scheduler.add(Job(state.ip, functools.partial(finalize, state), kind="final"))
+    stats_out.update(scheduler.stats)
     return finished
+
+
+def _partial_host(state: _HostState, ports: list, opts: ScanOptions) -> dict:
+    """The record of a host whose last step (OS guess, findings) failed: its open ports and nothing invented."""
+    guess = OSGuess()
+    return {
+        "ip": state.ip, "mac": state.info.get("mac"), "discovery": state.info.get("method"),
+        "os_guess": os_display(guess, None), "ttl": None, "os": guess.as_dict(),
+        "open_ports": sorted(state.tcp + [p for p in state.udp if p["state"] == "open"],
+                             key=lambda p: (p["proto"] != "tcp", p["port"])),
+        "udp_unconfirmed": [{"port": p["port"], "state": p["state"]} for p in state.udp if p["state"] != "open"],
+        "scanned": {"tcp": format_ports(ports), "udp": format_ports(opts.udp_ports)},
+        "vendor": None, "findings": [],
+    }

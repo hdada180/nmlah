@@ -116,6 +116,22 @@ def run(*args, **kw):
                           cwd=kw.pop("cwd", REPO), timeout=60, **kw)
 
 
+@pytest.mark.parametrize("encoding", ["cp1252", "cp437", "ascii"])
+def test_the_command_line_never_crashes_on_a_legacy_output_encoding(encoding, tcp_server):
+    """On Windows a piped stdout is cp1252 (or an OEM page). --help and the scan output hold Arabic, Hebrew and
+    symbols: this used to end in a UnicodeEncodeError before argparse printed anything."""
+    import os
+    env = dict(os.environ, PYTHONIOENCODING=encoding, PYTHONUTF8="0")
+    port = tcp_server(lambda c: c.close())
+    for args in (["--help"], ["--lang", "ar", "--help"], ["--lang", "he", "--help"],
+                 ["-t", "127.0.0.1", "-p", str(port), "--no-ping", "--no-os", "--lang", "ar", "--timeout", "0.5"],
+                 ["-t", "127.0.0.1", "-p", str(port), "--no-ping", "--no-os", "--lang", "he", "--timeout", "0.5"]):
+        result = run("nemla.py", *args, env=env)
+        assert result.returncode == 0 and "Traceback" not in result.stderr, (args, result.stderr[-300:])
+        assert result.stdout.strip(), args                                   # and it printed something
+    assert "--udp" in run("nemla.py", "--help", env=env).stdout
+
+
 def test_three_ways_to_start_it_report_the_same_version():
     for command in (["nemla.py", "--version"], ["-m", "nemla", "--version"],
                     ["-c", "import nemla; import sys; sys.exit(nemla.main(['--version']))"]):

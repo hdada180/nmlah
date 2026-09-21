@@ -132,6 +132,8 @@ def _spans_for(item: str, family, all_addresses: bool):
     addr = parse_ip(item)
     if addr is not None:
         _check_family(addr.version, family, item)
+        if "%" in item and not _ZONE.fullmatch(split_zone(item)[1] or ""):   # "fe80::1%" and "fe80::1%%x" are typos
+            raise ValueError(t("bad_range", spec=item))
         if split_zone(item)[1]:
             return [], [str(addr) + "%" + split_zone(item)[1]]
         return [(addr.version, int(addr), int(addr))], []
@@ -143,6 +145,10 @@ def _spans_for(item: str, family, all_addresses: bool):
             return [], [text]
         spans.append((obj.version, int(obj), int(obj)))
     return spans, []
+
+
+# an interface name (eth0, wlan0, br-1a2b, enp3s0.100) or number (Windows: fe80::1%12)
+_ZONE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.\-]{0,63}")
 
 
 def _check_family(version: int, family, item: str) -> None:

@@ -439,13 +439,10 @@ def _save(path: str, kind: str, meta: dict, hosts: list, fmt: str) -> bool:
     return True
 
 
-def main(argv=None) -> int:
-    parser = build_parser()
-    bare = not (sys.argv[1:] if argv is None else list(argv))
-    args = parser.parse_args(argv)
-    i18n._LANG = args.lang or "en"
-    if args.verbose:
-        enable_debug()
+def use_utf8_output() -> None:
+    """Write UTF-8 (never crash on a character the console's code page lacks). This has to happen before argparse
+    prints anything: `--help` and error messages contain Arabic, Hebrew and symbols, and on Windows a piped stdout
+    is cp1252 (or a legacy OEM page), which raised UnicodeEncodeError and printed nothing."""
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)   # TextIOWrapper has it, a redirected stream may not
         if reconfigure is not None:
@@ -453,6 +450,16 @@ def main(argv=None) -> int:
                 reconfigure(encoding="utf-8", errors="replace")
             except (ValueError, OSError):
                 pass
+
+
+def main(argv=None) -> int:
+    use_utf8_output()
+    parser = build_parser()
+    bare = not (sys.argv[1:] if argv is None else list(argv))
+    args = parser.parse_args(argv)
+    i18n._LANG = args.lang or "en"
+    if args.verbose:
+        enable_debug()
 
     if args.install_launcher or args.uninstall_launcher:
         return manage_launcher(args)

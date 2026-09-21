@@ -239,6 +239,65 @@ Nemla scans hostile networks and shows what strangers wrote, so it is hardened a
 - **Unsafe deserialisation:** only `json.loads` on untrusted data; no pickle, eval or exec (a test scans the source for them).
 - **SSRF:** probes never follow redirects or URLs found in banners; a target is only what you typed.
 
+## What needs elevated privileges
+
+Nothing you need for a normal scan. Connect scans, service and TLS fingerprinting, UDP probes, IPv6, reports, history, the
+neighbour-cache sweep and the **Guard** all use ordinary sockets and run as a normal user on Linux and Windows. Two optional
+extras craft packets themselves:
+
+| Extra | Needs | Without it |
+|---|---|---|
+| TCP/IP stack fingerprinting (one SYN, read the SYN-ACK) | Scapy **and** raw-socket rights: root or `CAP_NET_RAW` on Linux/macOS, an elevated prompt with Npcap on Windows | The OS guess uses TTL, service banners, open ports and protocol facts. Confidence is lower and the report says why. |
+| ARP requests sent by Scapy | the same | The operating system's neighbour cache is read after a gentle UDP nudge (works without root). |
+
+Nemla finds this out once, says so in one translated line ("TCP/IP fingerprinting is off (it needs root or administrator
+rights)..."), records it in the report's warnings and in `meta["capabilities"]`, and carries on. It never asks to be elevated
+and never elevates itself; if the operating system refuses in the middle of a scan the extra switches itself off, once. What is
+unavailable without them: the window, option-order and DF traits of a host's TCP stack, and Scapy's own ARP discovery. What
+works with root is proven against a real kernel in CI (the `privileged` job). Details: [docs/privileges.md](docs/privileges.md).
+
+## IPv6 and neighbour discovery
+
+IPv6 targets are first-class: explicit addresses (`::1`, `2001:db8::5`, `[::1]`, `fe80::1%eth0`), small ranges and blocks, TCP
+and UDP scans, reports, history and diff (IPv4 sorts first, IPv6 numerically after it). **Large prefixes are refused, never
+expanded**: a `/64` is 2^64 addresses, so anything above the host limit (`--max-hosts`, never more than 1,048,576) is rejected
+before a single address is built, and a `/108` is counted, not listed. Malformed input is a clear error, not a crash.
+
+IPv6 has no broadcast and no ARP, so **an unknown IPv6 host on the LAN cannot be found by sweeping an address range** the way an
+IPv4 host can: Nemla probes the addresses you give it (ICMP and TCP), it does not discover strangers. To find IPv6 neighbours
+use your router's neighbour table or `ip -6 neigh`, then scan those addresses. ARP-based discovery and the Guard's ARP checks are
+IPv4 only.
+
+## Testing and benchmarks
+
+```bash
+python -m pytest                                   # the whole suite (~870 tests, about two minutes)
+python -m ruff check . && python -m mypy           # lint and types (CI checks Linux, Windows and macOS typing)
+python -m benchmarks.bench_scan                    # 100 / 1,000 / 10,000 / 65,535 ports against a loopback target
+python -m benchmarks.bench_network                 # 10 / 50 / 100 synthetic hosts, some broken on purpose
+```
+
+CI runs seven Python versions (3.8 to 3.14) on Ubuntu, two on Windows, and separate jobs for the tests that need more than a
+laptop: `privileged` (root, Scapy, a veth pair and real ARP), `integration` (real Samba and xrdp in Docker,
+[tests/integration/README.md](tests/integration/README.md)) and `benchmark`. Tests that need those are skipped elsewhere with
+their reason printed, never silently. The layout of the 3D interface is tested in a real Chrome or Edge (a small standard-library
+DevTools client, no dependencies) at 14 screen sizes in three languages.
+
+Measured on one Windows 11 machine (Python 3.13, loopback target, 1,500 threads; `benchmarks/README.md` explains the columns):
+
+| ports | seconds | peak memory | connections at once | scheduler queue |
+|---|---|---|---|---|
+| 100 | 1.6 | 39 MB | 100 | 0 |
+| 1,000 | 7.6 | 109 MB | 1,000 | 0 |
+| 10,000 | 11.8 | 114 MB | 1,000 | 6,000 |
+| 65,535 | 37.0 | 120 MB | 1,000 | 6,000 |
+
+Memory stays flat as the port count grows (jobs are pulled lazily). Cancelling stops a scan in about 0.1 s, even while
+connections hang. Compared with 1.2.0 on the same machine, the port scanning itself is not slower (1,000 ports, banners off:
+0.67 s in 2.0, 0.68 s in 1.2.0); what 2.0 adds is service identification, which asks silent open ports several protocol questions
+and takes a timeout for each. That cost is bounded (a port that ignores four probes is given up on) and you choose it:
+`--intensity 1` or `--no-banner` for 1.x speed, higher intensity to try everything.
+
 ## Limitations
 
 - TCP is a connect scan (no SYN scan). UDP replies are only understood for the protocols above; `open|filtered` is common on UDP, and Linux rate-limits ICMP replies, so a fast scan of a Linux host reports many closed ports that way.

@@ -114,7 +114,9 @@ class Postgres(Detector):
     rarity = 4
 
     def probe(self, probe: Probe):
-        answer = probe.ask(struct.pack("!II", 8, 80877103), 16)[:1]
+        # PostgreSQL answers the SSL request with exactly one byte. Taking only the first byte of a longer reply made
+        # every service that starts with S or N (an "SSH-2.0-..." banner, for one) look like PostgreSQL.
+        answer = probe.ask(struct.pack("!II", 8, 80877103), 16)
         if answer not in (b"S", b"N"):
             return None
         ssl_support = answer == b"S"

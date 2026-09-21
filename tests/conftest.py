@@ -1,9 +1,26 @@
 """Shared fixtures: throw-away servers on loopback (no real machines are ever touched)."""
+import os
 import socket
 import threading
 import time
 
 import pytest
+
+# Tests that need something the default environment does not have are skipped, with the reason, unless asked for.
+# Nothing is skipped silently: the CI summary lists every skip and its reason.
+GATED = {
+    "integration": ("NEMLA_INTEGRATION", "needs the real Samba/xrdp lab: docker compose -f tests/integration/docker-compose.yml up -d "
+                                         "--build, then NEMLA_INTEGRATION=1 (see tests/integration/README.md)"),
+    "privileged": ("NEMLA_PRIVILEGED", "needs root, Scapy and iproute2: run by the `privileged` CI job, or NEMLA_PRIVILEGED=1 "
+                                       "under sudo (see docs/privileges.md)"),
+}
+
+
+def pytest_collection_modifyitems(config, items):
+    for item in items:
+        for marker, (variable, reason) in GATED.items():
+            if marker in item.keywords and os.environ.get(variable) != "1":
+                item.add_marker(pytest.mark.skip(reason=reason))
 
 
 def start_tcp_server(handler, host="127.0.0.1", family=socket.AF_INET):
