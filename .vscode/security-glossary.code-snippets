@@ -1,0 +1,489 @@
+{
+  "Fuzzing Definition": {
+    "prefix": "fuzzing",
+    "body": [
+      "Fuzzing (اختبار التشويش): تقنية آلية لاختبار البرمجيات والأنظمة من خلال إدخال كميات كبيرة ومتنوعة من البيانات غير المتوقعة أو غير الصالحة لاكتشاف حالات التعطل، الأخطاء المنطقية، ومشكلات الأمان."
+    ],
+    "description": "تعريف احترافي لمصطلح Fuzzing"
+  },
+
+  "Attack Path Analysis": {
+    "prefix": "attack-path",
+    "body": [
+      "Attack Path Analysis (تحليل مسار الهجوم): عملية تحليل سلسلة العلاقات ونقاط الضعف والامتيازات التي قد تسمح بالانتقال من نقطة دخول أولية إلى أصول أو موارد حساسة، بهدف اكتشاف المسارات الخطرة وتقليلها."
+    ],
+    "description": "تعريف احترافي لمصطلح Attack Path Analysis"
+  },
+
+  "Vulnerability Validation": {
+    "prefix": "vulnerability-validation",
+    "body": [
+      "Vulnerability Validation (التحقق من الثغرات): عملية التحقق المنهجي من صحة نتيجة أمنية مكتشفة وتحديد مدى قابليتها للتكرار وتأثيرها، مع استخدام اختبارات آمنة ومصرح بها لتقليل الإنذارات الكاذبة."
+    ],
+    "description": "تعريف احترافي لمصطلح Vulnerability Validation"
+  },
+
+  "Threat Modeling": {
+    "prefix": "threat-modeling",
+    "body": [
+      "Threat Modeling (نمذجة التهديدات): منهجية منظمة لتحديد الأصول المهمة، ونقاط الدخول، والتهديدات المحتملة، ومسارات الهجوم، والضوابط الأمنية المطلوبة قبل أو أثناء تصميم النظام."
+    ],
+    "description": "تعريف مصطلح Threat Modeling"
+  },
+
+  "Attack Surface": {
+    "prefix": "attack-surface",
+    "body": [
+      "Attack Surface (سطح الهجوم): مجموعة نقاط الدخول والواجهات والخدمات والمكونات التي يمكن أن تتفاعل معها جهات خارجية أو داخلية وقد تؤثر في أمن النظام."
+    ],
+    "description": "تعريف مصطلح Attack Surface"
+  },
+
+  "Attack Surface Management": {
+    "prefix": "asm",
+    "body": [
+      "Attack Surface Management (إدارة سطح الهجوم): عملية مستمرة لاكتشاف الأصول والواجهات والخدمات المرتبطة بالنظام ومراقبتها وتقييم المخاطر الناتجة عنها."
+    ],
+    "description": "تعريف مصطلح Attack Surface Management"
+  },
+
+  "Vulnerability Assessment": {
+    "prefix": "vulnerability-assessment",
+    "body": [
+      "Vulnerability Assessment (تقييم الثغرات): عملية منهجية لاكتشاف نقاط الضعف الأمنية وتصنيفها وتحليل مستوى خطورتها لمساعدة فرق الأمن على تحديد أولويات المعالجة."
+    ],
+    "description": "تعريف مصطلح Vulnerability Assessment"
+  },
+
+  "Risk Assessment": {
+    "prefix": "risk-assessment",
+    "body": [
+      "Risk Assessment (تقييم المخاطر): عملية تحديد المخاطر الأمنية المحتملة وتحليل احتمال حدوثها وتأثيرها على الأنظمة والبيانات والخدمات."
+    ],
+    "description": "تعريف مصطلح Risk Assessment"
+  },
+
+  "Security Misconfiguration": {
+    "prefix": "security-misconfiguration",
+    "body": [
+      "Security Misconfiguration (إعداد أمني غير صحيح): حالة تكون فيها إعدادات النظام أو الخدمة أو التطبيق غير آمنة، مثل تفعيل خدمات غير ضرورية أو استخدام إعدادات افتراضية ضعيفة."
+    ],
+    "description": "تعريف مصطلح Security Misconfiguration"
+  },
+
+  "False Positive": {
+    "prefix": "false-positive",
+    "body": [
+      "False Positive (إنذار كاذب): نتيجة أمنية تشير إلى وجود مشكلة أو ثغرة بينما لا تكون المشكلة قابلة للتحقق فعلياً في البيئة المستهدفة."
+    ],
+    "description": "تعريف مصطلح False Positive"
+  },
+
+  "False Negative": {
+    "prefix": "false-negative",
+    "body": [
+      "False Negative (سلبية كاذبة): حالة يفشل فيها نظام الكشف أو الاختبار في اكتشاف مشكلة أمنية موجودة فعلياً."
+    ],
+    "description": "تعريف مصطلح False Negative"
+  },
+
+  "Proof of Concept": {
+    "prefix": "poc",
+    "body": [
+      "Proof of Concept (إثبات المفهوم): نموذج أو اختبار محدود يوضح إمكانية حدوث سلوك أو مشكلة أمنية معينة داخل بيئة مصرح بها دون الحاجة إلى تنفيذ تأثير ضار."
+    ],
+    "description": "تعريف مصطلح Proof of Concept"
+  },
+
+  "Security Baseline": {
+    "prefix": "security-baseline",
+    "body": [
+      "Security Baseline (خط الأساس الأمني): مجموعة من الإعدادات والضوابط الأمنية القياسية التي يتم اعتمادها كمرجع لتقييم حالة الأنظمة."
+    ],
+    "description": "تعريف مصطلح Security Baseline"
+  },
+
+  "Network Reconnaissance": {
+    "prefix": "network-recon",
+    "body": [
+      "Network Reconnaissance (استطلاع الشبكة): عملية جمع معلومات تقنية عن شبكة مصرح بها، مثل الأجهزة والخدمات والمنافذ والبنية العامة، بهدف فهم البيئة الأمنية وتحديد نقاط تحتاج إلى حماية."
+    ],
+    "description": "تعريف مصطلح Network Reconnaissance"
+  },
+
+  "Host Discovery": {
+    "prefix": "host-discovery",
+    "body": [
+      "Host Discovery (اكتشاف الأجهزة): عملية تحديد الأجهزة أو العناوين النشطة داخل نطاق شبكة مصرح بها باستخدام آليات اكتشاف مناسبة للبيئة."
+    ],
+    "description": "تعريف مصطلح Host Discovery"
+  },
+
+  "Port Scanning": {
+    "prefix": "port-scanning",
+    "body": [
+      "Port Scanning (فحص المنافذ): تقنية لتحديد المنافذ والخدمات المتاحة على أجهزة مصرح باختبارها بهدف فهم سطح التعرض الشبكي وتحديد الخدمات التي تحتاج إلى مراجعة."
+    ],
+    "description": "تعريف مصطلح Port Scanning"
+  },
+
+  "Service Enumeration": {
+    "prefix": "service-enum",
+    "body": [
+      "Service Enumeration (حصر الخدمات): عملية تحديد الخدمات والبروتوكولات التي تعمل على الأنظمة المستهدفة وجمع معلومات تقنية غير حساسة عنها لأغراض التقييم الأمني."
+    ],
+    "description": "تعريف مصطلح Service Enumeration"
+  },
+
+  "Banner Grabbing": {
+    "prefix": "banner-grabbing",
+    "body": [
+      "Banner Grabbing (جمع معلومات الخدمة): تقنية للحصول على معلومات تعريفية تقدمها بعض الخدمات أو الخوادم، مثل اسم الخدمة أو إصدارها، بهدف دعم عملية الجرد والتحليل الأمني."
+    ],
+    "description": "تعريف مصطلح Banner Grabbing"
+  },
+
+  "OS Fingerprinting": {
+    "prefix": "os-fingerprinting",
+    "body": [
+      "OS Fingerprinting (تحديد نظام التشغيل): عملية تقديرية لتحليل خصائص الاتصال الشبكي بهدف تحديد نظام التشغيل أو عائلته المحتملة على جهاز مصرح بفحصه."
+    ],
+    "description": "تعريف مصطلح OS Fingerprinting"
+  },
+
+  "CVE": {
+    "prefix": "cve",
+    "body": [
+      "CVE (Common Vulnerabilities and Exposures): نظام تسمية موحد يخصص معرفات عامة للثغرات الأمنية المعروفة لتسهيل توثيقها ومشاركتها ومتابعتها."
+    ],
+    "description": "تعريف مصطلح CVE"
+  },
+
+  "CVSS": {
+    "prefix": "cvss",
+    "body": [
+      "CVSS (Common Vulnerability Scoring System): إطار قياسي لتقييم شدة الثغرات الأمنية اعتماداً على مجموعة من الخصائص التقنية وتأثير الثغرة."
+    ],
+    "description": "تعريف مصطلح CVSS"
+  },
+
+  "CWE": {
+    "prefix": "cwe",
+    "body": [
+      "CWE (Common Weakness Enumeration): تصنيف منظم لأنواع نقاط الضعف البرمجية والأمنية الشائعة."
+    ],
+    "description": "تعريف مصطلح CWE"
+  },
+
+  "IOC": {
+    "prefix": "ioc",
+    "body": [
+      "IOC (Indicator of Compromise): مؤشر تقني قد يساعد فرق الأمن على اكتشاف أو التحقيق في نشاط أو اختراق محتمل، مثل عناوين IP أو نطاقات أو تجزئات ملفات أو مؤشرات أخرى."
+    ],
+    "description": "تعريف مصطلح Indicator of Compromise"
+  },
+
+  "IOA": {
+    "prefix": "ioa",
+    "body": [
+      "IOA (Indicator of Attack): مؤشر سلوكي أو تقني قد يدل على محاولة تنفيذ نشاط هجومي أو مرحلة من مراحل الهجوم."
+    ],
+    "description": "تعريف مصطلح Indicator of Attack"
+  },
+
+  "EDR": {
+    "prefix": "edr",
+    "body": [
+      "EDR (Endpoint Detection and Response): حلول أمنية تراقب الأجهزة الطرفية وتجمع الأحداث والسلوكيات لمساعدة فرق الأمن على اكتشاف التهديدات والتحقيق فيها والاستجابة لها."
+    ],
+    "description": "تعريف مصطلح EDR"
+  },
+
+  "SIEM": {
+    "prefix": "siem",
+    "body": [
+      "SIEM (Security Information and Event Management): منصة تجمع السجلات والأحداث الأمنية من مصادر متعددة وتساعد في تحليلها وربطها واكتشاف الأنشطة المشبوهة."
+    ],
+    "description": "تعريف مصطلح SIEM"
+  },
+
+  "SOC": {
+    "prefix": "soc",
+    "body": [
+      "SOC (Security Operations Center): فريق أو مركز مسؤول عن مراقبة الأحداث الأمنية وتحليل التنبيهات والتحقيق في الحوادث والاستجابة لها."
+    ],
+    "description": "تعريف مصطلح Security Operations Center"
+  },
+
+  "Incident Response": {
+    "prefix": "incident-response",
+    "body": [
+      "Incident Response (الاستجابة للحوادث): مجموعة الإجراءات المنظمة التي يتم تنفيذها لاكتشاف الحوادث الأمنية واحتوائها وتحليلها ومعالجتها واستعادة الأنظمة بعد الحادث."
+    ],
+    "description": "تعريف مصطلح Incident Response"
+  },
+
+  "Digital Forensics": {
+    "prefix": "digital-forensics",
+    "body": [
+      "Digital Forensics (التحليل الجنائي الرقمي): عملية جمع وتحليل وحفظ الأدلة الرقمية بطريقة منظمة للمساعدة في فهم الحوادث الأمنية وتحديد ما حدث."
+    ],
+    "description": "تعريف مصطلح Digital Forensics"
+  },
+
+  "Least Privilege": {
+    "prefix": "least-privilege",
+    "body": [
+      "Least Privilege (أقل قدر من الصلاحيات): مبدأ أمني يمنح المستخدم أو الخدمة أو العملية الحد الأدنى من الصلاحيات اللازمة لتنفيذ المهمة المطلوبة."
+    ],
+    "description": "تعريف مبدأ Least Privilege"
+  },
+
+  "Defense in Depth": {
+    "prefix": "defense-in-depth",
+    "body": [
+      "Defense in Depth (الدفاع متعدد الطبقات): استراتيجية أمنية تعتمد على عدة طبقات مستقلة من الحماية بحيث لا يؤدي فشل طبقة واحدة إلى فقدان الحماية بالكامل."
+    ],
+    "description": "تعريف مبدأ Defense in Depth"
+  },
+
+  "Zero Trust": {
+    "prefix": "zero-trust",
+    "body": [
+      "Zero Trust (انعدام الثقة الافتراضية): نموذج أمني يفترض عدم منح الثقة تلقائياً لأي مستخدم أو جهاز أو خدمة، ويعتمد على التحقق المستمر والسياسات الدقيقة للوصول."
+    ],
+    "description": "تعريف مبدأ Zero Trust"
+  },
+
+  "Secure Configuration": {
+    "prefix": "secure-config",
+    "body": [
+      "Secure Configuration (الإعداد الآمن): تطبيق إعدادات تقلل الخدمات والصلاحيات والمكونات غير الضرورية وتتماشى مع متطلبات الأمن المعتمدة."
+    ],
+    "description": "تعريف مصطلح Secure Configuration"
+  },
+
+  "Patch Management": {
+    "prefix": "patch-management",
+    "body": [
+      "Patch Management (إدارة التحديثات الأمنية): عملية تحديد التحديثات المطلوبة واختبارها واعتمادها وتطبيقها ومتابعة نجاحها على الأنظمة والبرمجيات."
+    ],
+    "description": "تعريف مصطلح Patch Management"
+  },
+
+  "Security Monitoring": {
+    "prefix": "security-monitoring",
+    "body": [
+      "Security Monitoring (المراقبة الأمنية): عملية مستمرة لمراقبة الأنظمة والشبكات والسجلات والأحداث بهدف اكتشاف الأنشطة غير المعتادة أو المؤشرات الأمنية المهمة."
+    ],
+    "description": "تعريف مصطلح Security Monitoring"
+  },
+
+  "Network Segmentation": {
+    "prefix": "network-segmentation",
+    "body": [
+      "Network Segmentation (تقسيم الشبكة): فصل الشبكة إلى مناطق أو قطاعات منطقية لتقليل نطاق الوصول والحد من انتشار الحوادث الأمنية."
+    ],
+    "description": "تعريف مصطلح Network Segmentation"
+  },
+
+  "Zero Day": {
+    "prefix": "zero-day",
+    "body": [
+      "Zero-Day Vulnerability (ثغرة يوم الصفر): ثغرة أمنية غير معروفة أو غير معالجة بشكل كافٍ من الجهة المسؤولة وقت اكتشافها، وقد تتطلب استجابة عاجلة."
+    ],
+    "description": "تعريف مصطلح Zero-Day"
+  },
+
+  "Exploitability": {
+    "prefix": "exploitability",
+    "body": [
+      "Exploitability (قابلية الاستغلال): وصف لمدى إمكانية استغلال نقطة ضعف معينة ضمن ظروف وقيود محددة."
+    ],
+    "description": "تعريف مصطلح Exploitability"
+  },
+
+  "Impact Analysis": {
+    "prefix": "impact-analysis",
+    "body": [
+      "Impact Analysis (تحليل الأثر): عملية تحديد النتائج المحتملة لمشكلة أو حادث أمني على السرية والسلامة والتوافر والأنظمة والبيانات والخدمات."
+    ],
+    "description": "تعريف مصطلح Impact Analysis"
+  },
+
+  "CIA Triad": {
+    "prefix": "cia-triad",
+    "body": [
+      "CIA Triad (مثلث أمن المعلومات): نموذج أساسي يتكون من Confidentiality (السرية)، Integrity (السلامة)، وAvailability (التوافر)، ويستخدم لفهم أهداف الحماية الأمنية."
+    ],
+    "description": "تعريف مثلث أمن المعلومات CIA"
+  },
+
+  "Authentication": {
+    "prefix": "authentication",
+    "body": [
+      "Authentication (المصادقة): عملية التحقق من هوية المستخدم أو الجهاز أو الخدمة قبل السماح بالوصول."
+    ],
+    "description": "تعريف مصطلح Authentication"
+  },
+
+  "Authorization": {
+    "prefix": "authorization",
+    "body": [
+      "Authorization (التفويض): عملية تحديد الموارد والإجراءات التي يُسمح لهوية موثقة بالوصول إليها أو تنفيذها."
+    ],
+    "description": "تعريف مصطلح Authorization"
+  },
+
+  "Access Control": {
+    "prefix": "access-control",
+    "body": [
+      "Access Control (التحكم بالوصول): مجموعة السياسات والآليات التي تحدد من يمكنه الوصول إلى مورد معين وما الإجراءات المسموح له بتنفيذها."
+    ],
+    "description": "تعريف مصطلح Access Control"
+  },
+
+  "Security Telemetry": {
+    "prefix": "security-telemetry",
+    "body": [
+      "Security Telemetry (البيانات الأمنية): بيانات وأحداث يتم جمعها من الأنظمة والشبكات والتطبيقات لمساعدة فرق الأمن على المراقبة والتحليل والكشف عن التهديدات."
+    ],
+    "description": "تعريف مصطلح Security Telemetry"
+  },
+
+  "Risk Prioritization": {
+    "prefix": "risk-prioritization",
+    "body": [
+      "Risk Prioritization (ترتيب أولويات المخاطر): عملية تنظيم المشكلات الأمنية وفق مستوى الخطورة والتعرض والأثر والسياق التشغيلي لتحديد ما يحتاج إلى معالجة أولاً."
+    ],
+    "description": "تعريف مصطلح Risk Prioritization"
+  },
+
+  "Remediation": {
+    "prefix": "remediation",
+    "body": [
+      "Remediation (المعالجة الأمنية): الإجراءات المتخذة لإزالة المشكلة الأمنية أو تقليل تأثيرها أو خفض احتمال استغلالها."
+    ],
+    "description": "تعريف مصطلح Remediation"
+  },
+
+  "Security Validation": {
+    "prefix": "security-validation",
+    "body": [
+      "Security Validation (التحقق الأمني): عملية اختبار الضوابط والإعدادات والإجراءات الأمنية للتأكد من أنها تعمل كما هو متوقع وتحقق مستوى الحماية المطلوب."
+    ],
+    "description": "تعريف مصطلح Security Validation"
+  },
+
+  "Authorized Testing": {
+    "prefix": "authorized-testing",
+    "body": [
+      "Authorized Security Testing (الاختبار الأمني المصرح به): اختبار يتم تنفيذه ضمن نطاق وبيئة وتصريح واضحين بهدف اكتشاف المشكلات الأمنية وتحسين الحماية دون تجاوز حدود التفويض."
+    ],
+    "description": "تعريف مصطلح Authorized Security Testing"
+  },
+
+  "Scope Control": {
+    "prefix": "scope-control",
+    "body": [
+      "Scope Control (التحكم في نطاق الاختبار): آلية لضمان أن جميع عمليات الفحص والاختبار تظل ضمن الأصول والعناوين والخدمات والفترة الزمنية المصرح بها."
+    ],
+    "description": "تعريف مصطلح Scope Control"
+  },
+
+  "Safe Scanning": {
+    "prefix": "safe-scanning",
+    "body": [
+      "Safe Scanning (الفحص الآمن): تنفيذ عمليات الاستطلاع والفحص بطريقة تقلل التأثير على الأنظمة والخدمات، مع احترام حدود التفويض ومعدلات الطلب المناسبة."
+    ],
+    "description": "تعريف مصطلح Safe Scanning"
+  },
+
+  "Audit Trail": {
+    "prefix": "audit-trail",
+    "body": [
+      "Audit Trail (سجل التدقيق): سجل موثق للأحداث والإجراءات التي تمت داخل النظام، ويستخدم للمراجعة والتحقيق وتتبع التغييرات."
+    ],
+    "description": "تعريف مصطلح Audit Trail"
+  },
+
+  "Security Report": {
+    "prefix": "security-report",
+    "body": [
+      "Security Report (التقرير الأمني): وثيقة منظمة تعرض نتائج الاختبارات الأمنية، والأصول المتأثرة، والأدلة، ومستوى الخطورة، والتوصيات الخاصة بالمعالجة."
+    ],
+    "description": "تعريف مصطلح Security Report"
+  },
+
+  "Finding": {
+    "prefix": "security-finding",
+    "body": [
+      "Security Finding (نتيجة أمنية): ملاحظة أو مشكلة أمنية تم اكتشافها أثناء عملية الفحص أو التقييم وتحتاج إلى تحليل أو معالجة أو توثيق."
+    ],
+    "description": "تعريف مصطلح Security Finding"
+  },
+
+  "Asset Inventory": {
+    "prefix": "asset-inventory",
+    "body": [
+      "Asset Inventory (جرد الأصول): قائمة منظمة بالأجهزة والخدمات والتطبيقات والموارد الرقمية التي تنتمي إلى البيئة وتحتاج إلى إدارة وحماية."
+    ],
+    "description": "تعريف مصطلح Asset Inventory"
+  },
+
+  "Exposure": {
+    "prefix": "exposure",
+    "body": [
+      "Security Exposure (التعرض الأمني): مدى إمكانية وصول جهات أو شبكات أو خدمات غير موثوقة إلى أصل أو واجهة أو خدمة، وما قد يترتب على ذلك من مخاطر."
+    ],
+    "description": "تعريف مصطلح Security Exposure"
+  },
+
+  "Hardening": {
+    "prefix": "hardening",
+    "body": [
+      "System Hardening (تقوية النظام): مجموعة إجراءات تهدف إلى تقليل سطح الهجوم من خلال إزالة المكونات غير الضرورية، وتشديد الإعدادات، وتقليل الصلاحيات، وتفعيل الضوابط الأمنية المناسبة."
+    ],
+    "description": "تعريف مصطلح System Hardening"
+  },
+
+  "Security Architecture": {
+    "prefix": "security-architecture",
+    "body": [
+      "Security Architecture (الهندسة الأمنية): تصميم منظم للأنظمة والشبكات والضوابط والسياسات بهدف حماية الأصول والبيانات وتحقيق المتطلبات الأمنية."
+    ],
+    "description": "تعريف مصطلح Security Architecture"
+  },
+
+  "Threat Intelligence": {
+    "prefix": "threat-intelligence",
+    "body": [
+      "Threat Intelligence (الاستخبارات التهديدية): معلومات منظمة عن التهديدات والجهات والأساليب والمؤشرات والسياقات الأمنية التي تساعد على تحسين الكشف والاستجابة والدفاع."
+    ],
+    "description": "تعريف مصطلح Threat Intelligence"
+  },
+
+  "Security Control": {
+    "prefix": "security-control",
+    "body": [
+      "Security Control (ضابط أمني): إجراء أو تقنية أو سياسة تستخدم لمنع أو اكتشاف أو احتواء أو تقليل المخاطر الأمنية."
+    ],
+    "description": "تعريف مصطلح Security Control"
+  },
+
+  "Detection Engineering": {
+    "prefix": "detection-engineering",
+    "body": [
+      "Detection Engineering (هندسة الكشف): عملية تصميم وتطوير واختبار قواعد وآليات تساعد على اكتشاف الأنشطة الأمنية المشبوهة أو غير الطبيعية."
+    ],
+    "description": "تعريف مصطلح Detection Engineering"
+  },
+
+  "Security Regression Testing": {
+    "prefix": "security-regression",
+    "body": [
+      "Security Regression Testing (اختبار الانحدار الأمني): إعادة اختبار الضوابط أو الوظائف الأمنية بعد التغييرات للتأكد من أن الإصلاحات أو التحديثات لم تُعد إدخال مشكلات أمنية سابقة."
+    ],
+    "description": "تعريف مصطلح Security Regression Testing"
+  }
+}
