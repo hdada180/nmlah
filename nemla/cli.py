@@ -118,17 +118,65 @@ def probes_arg(text):
     return bounded_int(text, "max-probes", 0, 10**12)
 
 
+EXAMPLES = """
+examples:
+  nemla                                 open the 3D interface
+  nemla 192.168.1.10                    scan one host (the common ports)
+  nemla 192.168.1.0/24                  scan a whole network
+  nemla 192.168.1.10 -p 1-1000 --udp    more TCP ports, plus the common UDP ports
+  nemla 192.168.1.10 -p all             every TCP port
+  nemla 192.168.1.10 --json scan.json   also save the results as JSON (--csv, --md, --sarif too)
+  nemla 10.0.0.0/24 --fail-on high      for CI: exit code 3 on a high finding
+  nemla watch 192.168.1.0/24 15m        scan again every 15 minutes and say what changed
+  nemla diff old.json new.json          what changed between two saved scans
+  nemla guard                           watch this network for suspicious activity
+  nemla ui                              open the 3D interface
+
+Every option above works with these too, and `-t TARGET` is the same as a plain TARGET.
+
+"""
+
+# The first word of a command line may be one of these; each stands for the flags it replaces.
+COMMAND_WORDS = ("scan", "ui", "guard", "watch", "diff")
+DEFAULT_WATCH_EVERY = "15m"
+
+
+def expand_command_word(argv: list) -> list:
+    """The short spellings, as the flags they stand for (a name that is also a host is still reachable with `-t`).
+
+        nemla scan TARGET ...            ->  TARGET ...
+        nemla ui ...                     ->  --ui ...
+        nemla guard ...                  ->  --guard ...
+        nemla diff OLD NEW ...           ->  --diff OLD NEW ...
+        nemla watch TARGET [EVERY] ...   ->  --watch EVERY TARGET ...       (EVERY defaults to 15m)
+    """
+    if not argv or argv[0] not in COMMAND_WORDS:
+        return list(argv)
+    word, rest = argv[0], list(argv[1:])
+    if word == "scan":
+        return rest
+    if word == "watch":
+        target = rest.pop(0) if rest and not rest[0].startswith("-") else None
+        every = rest.pop(0) if target is not None and rest and not rest[0].startswith("-") else DEFAULT_WATCH_EVERY
+        return ["--watch", every, *([target] if target is not None else []), *rest]
+    return [f"--{word}", *rest]
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="nemla",
+        usage="nemla [TARGET] [options]   |   nemla ui | guard | watch TARGET [EVERY] | diff OLD NEW   |   nemla --help",
         description="Nemla (نملة) - network reconnaissance, service intelligence and defensive monitoring. "
                     "Run it without arguments to open the 3D interface.",
-        epilog="Only scan systems you own or have explicit permission to test.",
+        epilog=EXAMPLES + "Only scan systems you own or have explicit permission to test.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    p.add_argument("target_arg", nargs="?", metavar="TARGET",
+                   help="what to scan: IP, hostname, CIDR (10.0.0.0/24), range (10.0.0.1-50), IPv6 (2001:db8::/120); "
+                        "several separated by commas (same as -t)")
     p.add_argument("-t", "--target",
-                   help="IP, hostname, CIDR (10.0.0.0/24), range (10.0.0.1-50 or 10.0.0.1-10.0.0.50), "
-                        "IPv6 (2001:db8::/120); several separated by commas")
-    p.add_argument("-p", "--ports", help="TCP ports: 22 | 22,80,443 | 1-1000")
+                   help="the same as the TARGET argument (kept so older commands keep working)")
+    p.add_argument("-p", "--ports", help="TCP ports: 22 | 22,80,443 | 1-1000 | all")
     p.add_argument("--top-ports", action="store_true",
                    help="scan the common-ports list (default when -p is not given)")
     p.add_argument("-4", dest="family", action="store_const", const=4, help="resolve names to IPv4 only")
@@ -455,8 +503,13 @@ def use_utf8_output() -> None:
 def main(argv=None) -> int:
     use_utf8_output()
     parser = build_parser()
-    bare = not (sys.argv[1:] if argv is None else list(argv))
-    args = parser.parse_args(argv)
+    given = sys.argv[1:] if argv is None else list(argv)
+    bare = not given
+    args = parser.parse_args(expand_command_word(given))
+    if args.target_arg:
+        if args.target:
+            parser.error("give the target once: either as an argument or with -t, not both")
+        args.target = args.target_arg
     i18n._LANG = args.lang or "en"
     if args.verbose:
         enable_debug()
@@ -471,7 +524,7 @@ def main(argv=None) -> int:
         print_banner()
         return launch_ui(args)
     if not args.target:
-        parser.error("the following arguments are required: -t/--target "
+        parser.error("what should I scan? Give a target, for example: nemla 192.168.1.10 "
                      "(or run nemla with no arguments to open the 3D interface)")
     if args.watch:
         return run_watch(args)

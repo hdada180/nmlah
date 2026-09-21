@@ -10,6 +10,7 @@
 
 ## מה חדש בגרסה 2.0
 
+- **פקודות קצרות יותר.** `nemla 192.168.1.10` במקום `nemla -t 192.168.1.10`; `nemla watch`, `nemla diff`, `nemla guard` ו-`nemla ui` למצבים; `-p all` לכל הפורטים. כל דגלי 1.x ממשיכים לעבוד.
 - **ארכיטקטורה אמיתית.** קובץ `nemla.py` היחיד (1,900 שורות) הפך לחבילה `nemla/`: יעדים, גילוי, מתזמן מוגבל, סורקי TCP ו-UDP, תוסף קטן לכל פרוטוקול, זיהוי מערכת הפעלה, ממצאים, דוחות, היסטוריה ושמירה. `python3 nemla.py ...` ו-`import nemla` ממשיכים לעבוד. ראו [docs/architecture.md](docs/architecture.md).
 - **IPv6** בכל מקום (יעדים, סריקה, גילוי, דוחות, היסטוריה, הממשק).
 - **סריקת UDP** עם מצבים כנים: `open`, `closed`, `open|filtered`, `unknown`, בקצב מוגבל ובאופן בטוח.
@@ -55,10 +56,12 @@
 ```bash
 git clone https://github.com/hdada180/nmlah.git
 cd nmlah
-python3 nemla.py --help
+python3 nemla.py --help        # ב-Windows: python nemla.py --help
 ```
 
 <div dir="rtl">
+
+בהמשך המסמך, **`nemla` פירושו `python3 nemla.py`** מהתיקייה הזו (ב-Windows `python nemla.py`). אם התקנתם אותה כפקודה (ראו בהמשך) זו ממש הפקודה `nemla`.
 
 אופציונלי, לגילוי ARP ולטביעת אצבע SYN גולמית (דורש root):
 
@@ -70,47 +73,64 @@ pip install scapy        # או: pip install -r requirements.txt
 
 <div dir="rtl">
 
-אפשר גם להתקין כפקודה: `pip install .` (או `pip install ".[arp]"`), ואז `nemla -t ...` או `python -m nemla -t ...`.
+אפשר גם להתקין כפקודה: `pip install .` (או `pip install ".[arp]"`), ואז `nemla 192.168.1.10` (או `python -m nemla 192.168.1.10`) מכל תיקייה.
 
 ## התחלה מהירה
+
+שלוש פקודות מספיקות כדי להתחיל:
 
 </div>
 
 ```bash
-# רשת שלמה, הפורטים הנפוצים
-sudo python3 nemla.py -t 192.168.1.0/24
-
-# מארח אחד, פורטים 1-1000, וגם פורטי ה-UDP הנפוצים
-python3 nemla.py -t 192.168.1.10 -p 1-1000 --udp
-
-# IPv6, וכמה יעדים יחד
-python3 nemla.py -t 2001:db8::5,192.168.1.10-20
-
-# כל פורמטי הדוחות
-python3 nemla.py -t 192.168.1.10 --json scan.json --csv scan.csv --md scan.md --sarif scan.sarif
-
-# סריקה עדינה: 50 חיבורים בשנייה, ולכל היותר 5,000 בדיקות
-python3 nemla.py -t 192.168.1.0/24 --rate 50 --max-probes 5000
-
-# ממשק ודוח בעברית או בערבית
-python3 nemla.py -t 192.168.1.10 --lang he
-
-# לשימוש ב-CI: קוד יציאה 3 על כל ממצא חמור
-python3 nemla.py -t 10.0.0.0/24 --fail-on high
+nemla                                  # פותח את הממשק התלת־ממדי: כתבו יעד ולחצו התחלת סריקה
+nemla 192.168.1.10                     # סריקת מארח אחד: הפורטים הנפוצים, שירותים, ניחוש מערכת הפעלה, ממצאים ודוח
+nemla 192.168.1.0/24                   # סריקת רשת שלמה
 ```
 
 <div dir="rtl">
 
-`sudo` נחוץ רק בשביל Scapy (בקשות ARP אמיתיות, ICMP גולמי, טביעת אצבע SYN). בלעדיו נמלה קוראת את טבלת השכנים של מערכת ההפעלה וחוזרת לפקודת `ping` ולחיבורים רגילים.
+הדוח נכתב לקובץ `nemla_report.html` בתיקייה הנוכחית (`-o` משנה זאת). מכאן מוסיפים רק מה שצריך:
+
+</div>
+
+```bash
+nemla 192.168.1.10 -p 22,80,443        # רק הפורטים האלה (או 1-1000, או all)
+nemla 192.168.1.10 --udp               # וגם פורטי ה-UDP הנפוצים
+nemla 2001:db8::5,192.168.1.10-20      # IPv6, וכמה יעדים יחד
+nemla 192.168.1.10 --json scan.json    # לשמור גם JSON (וכך גם --csv, --md ו---sarif)
+nemla 192.168.1.0/24 --rate 50 --max-probes 5000    # סריקה עדינה: 50 חיבורים בשנייה, ולכל היותר 5,000 בדיקות
+nemla 192.168.1.10 --lang he           # ממשק ודוח בעברית (--lang ar לערבית)
+nemla 10.0.0.0/24 --fail-on high       # ל-CI: קוד יציאה 3 על כל ממצא חמור
+```
+
+<div dir="rtl">
+
+ושאר המצבים הם מילה אחת כל אחד:
+
+</div>
+
+```bash
+nemla watch 192.168.1.0/24 15m         # סריקה חוזרת כל 15 דקות ודיווח על מה שהשתנה
+nemla diff yesterday.json today.json   # מה השתנה בין שתי סריקות שמורות
+nemla guard                            # שמירה על הרשת מפני פעילות חשודה
+nemla ui                               # הממשק התלת־ממדי (כמו להריץ nemla בלי כלום)
+```
+
+<div dir="rtl">
+
+הצורה הישנה ממשיכה לעבוד: `nemla -t 192.168.1.10 --udp` זהה ל-`nemla 192.168.1.10 --udp`. המילים `scan`, `ui`, `guard`, `watch` ו-`diff` הן פקודות רק כמילה הראשונה; מארח ששמו באמת `ui` נסרק כך: `-t ui`.
+
+`sudo` נחוץ רק בשביל Scapy (בקשות ARP אמיתיות, ICMP גולמי, טביעת אצבע SYN): `sudo python3 nemla.py 192.168.1.0/24`. בלעדיו נמלה קוראת את טבלת השכנים של מערכת ההפעלה וחוזרת לפקודת `ping` ולחיבורים רגילים.
 
 ## אפשרויות
 
 | אפשרות | תיאור |
 | --- | --- |
-| `-t`, `--target` | IP, שם, CIDR, `10.0.0.1-50`, `10.0.0.1-10.0.0.50`, IPv6; כמה יעדים מופרדים בפסיקים |
+| `TARGET` (או `-t TARGET`) | IP, שם, CIDR, `10.0.0.1-50`, `10.0.0.1-10.0.0.50`, IPv6; כמה יעדים מופרדים בפסיקים. `nemla 192.168.1.10` ו-`nemla -t 192.168.1.10` זהים |
+| `ui`, `guard`, `watch TARGET [EVERY]`, `diff OLD NEW`, `scan TARGET` | המילה הראשונה בפקודה: קיצור של `--ui`, `--guard`, `--watch EVERY -t TARGET` (כל 15 דקות אם משמיטים את EVERY), `--diff OLD NEW` וסריקה רגילה |
 | `-4` / `-6` | פתרון שמות ל-IPv4 או ל-IPv6 בלבד (ברירת מחדל: כתובת ה-IPv4 הראשונה, אחרת ה-IPv6 הראשונה) |
 | `--all-addresses` | סריקת כל כתובת שהשם נפתר אליה |
-| `-p`, `--ports` | `22`, `22,80,443`, `1-1000` או שילוב |
+| `-p`, `--ports` | `22`, `22,80,443`, `1-1000`, `all` (כל הפורטים, 1-65535) או שילוב |
 | `--top-ports` | לסרוק גם את רשימת הפורטים הנפוצים (ברירת המחדל כשאין `-p`) |
 | `--udp` | לסרוק גם את פורטי ה-UDP הנפוצים |
 | `--udp-ports LIST` | פורטי UDP לסריקה (מפעיל את `--udp`) |
@@ -192,9 +212,9 @@ python3 nemla.py -t 10.0.0.0/24 --fail-on high
 </div>
 
 ```bash
-python3 nemla.py -t 192.168.1.0/24 --json today.json
-python3 nemla.py --diff yesterday.json today.json      # הוסיפו --fail-on-change לבדיקות מתוזמנות
-python3 nemla.py -t 192.168.1.0/24 --watch 15m --watch-log changes.jsonl
+nemla 192.168.1.0/24 --json today.json
+nemla diff yesterday.json today.json                   # הוסיפו --fail-on-change לבדיקות מתוזמנות
+nemla watch 192.168.1.0/24 15m --watch-log changes.jsonl
 ```
 
 <div dir="rtl">
@@ -214,7 +234,8 @@ python3 nemla.py -t 192.168.1.0/24 --watch 15m --watch-log changes.jsonl
 </div>
 
 ```bash
-python3 nemla.py --guard [--guard-log alerts.jsonl]
+nemla guard
+nemla guard --guard-log alerts.jsonl       # וגם מוסיף כל התראה לקובץ
 ```
 
 <div dir="rtl">
@@ -228,7 +249,7 @@ python3 nemla.py --guard [--guard-log alerts.jsonl]
 </div>
 
 ```bash
-python3 nemla.py            # פותח את הממשק התלת־ממדי
+nemla            # פותח את הממשק התלת־ממדי (כמו: nemla ui)
 ```
 
 <div dir="rtl">
@@ -244,13 +265,13 @@ python3 nemla.py            # פותח את הממשק התלת־ממדי
 </div>
 
 ```bash
-python3 nemla.py --install-launcher     # פריט תפריט, סמל ופקודה `nemla`, הכול תחת ~/.local
-python3 nemla.py --uninstall-launcher
+nemla --install-launcher     # פריט תפריט, סמל ופקודה `nemla`, הכול תחת ~/.local
+nemla --uninstall-launcher
 ```
 
 <div dir="rtl">
 
-בדפדפן ממשפחת Chromium היא נפתחת כחלון משלה, אחרת בדפדפן ברירת המחדל; סגירת החלון עוצרת את נמלה. דפדפנים מסרבים לרוץ כ-root, ולכן לגילוי ARP הריצו `sudo python3 nemla.py --no-browser` ופתחו את הכתובת שהודפסה. דרך SSH העבירו את הפורט (`ssh -L PORT:127.0.0.1:PORT host`).
+בדפדפן ממשפחת Chromium היא נפתחת כחלון משלה, אחרת בדפדפן ברירת המחדל; סגירת החלון עוצרת את נמלה. דפדפנים מסרבים לרוץ כ-root, ולכן לגילוי ARP הריצו `sudo python3 nemla.py ui --no-browser` ופתחו את הכתובת שהודפסה. דרך SSH העבירו את הפורט (`ssh -L PORT:127.0.0.1:PORT host`).
 
 ## אבטחה
 
@@ -297,7 +318,7 @@ IPv6 השתמשו בטבלת השכנים של הראוטר או ב-`ip -6 neigh
 
 ## שדרוג מ-1.x
 
-`python3 nemla.py ...` ו-`import nemla` ממשיכים לעבוד, וכל אפשרות ושדה פלט מ-1.x עדיין קיימים (נוספו שדות חדשים). שינויים שתבחינו בהם: יעדי IPv6 מתקבלים; אפשר לתת כמה יעדים יחד; מזהי הסריקות הם UUID (המזהים הישנים עדיין נטענים); `history` ו-`guard` עברו ל-`nemla.history` ול-`nemla.guard` (השמות `nemla_ui.*` עדיין מפנים לאותם מודולים); הממצא `http_plain` דורש הוכחה ש-HTTPS נסרק; ו-`--timeout 0` ומספרים לא תקינים אחרים נדחים.
+`python3 nemla.py ...` ו-`import nemla` ממשיכים לעבוד, `-t TARGET` ממשיך לעבוד לצד ה-`TARGET` הפשוט החדש, וכל אפשרות ושדה פלט מ-1.x עדיין קיימים (נוספו שדות חדשים). שינויים שתבחינו בהם: יעדי IPv6 מתקבלים; אפשר לתת כמה יעדים יחד; מזהי הסריקות הם UUID (המזהים הישנים עדיין נטענים); `history` ו-`guard` עברו ל-`nemla.history` ול-`nemla.guard` (השמות `nemla_ui.*` עדיין מפנים לאותם מודולים); הממצא `http_plain` דורש הוכחה ש-HTTPS נסרק; ו-`--timeout 0` ומספרים לא תקינים אחרים נדחים.
 
 ## פיתוח
 

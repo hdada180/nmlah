@@ -17,6 +17,7 @@ Nemla (Arabic: **نملة**, "ant") is a small network reconnaissance platform w
 ## What's new in 2.0
 
 - **A real architecture.** The single 1,900-line `nemla.py` became the `nemla/` package: targets, discovery, a bounded scheduler, TCP and UDP scanners, one small plugin per protocol, OS detection, findings, reports, history and guard. `python3 nemla.py ...` and `import nemla` keep working. See [docs/architecture.md](docs/architecture.md).
+- **Shorter commands.** `nemla 192.168.1.10` instead of `nemla -t 192.168.1.10`; `nemla watch`, `nemla diff`, `nemla guard` and `nemla ui` for the modes; `-p all` for every port. Every 1.x flag still works.
 - **IPv6** everywhere (targets, scanning, discovery, reports, history, the interface).
 - **UDP scanning** with honest states: `open`, `closed`, `open|filtered`, `unknown`, rate limited and safe.
 - **Service fingerprinting as plugins:** HTTP/HTTPS, SSH (with the algorithms the server offers), FTP, SMTP, POP3, IMAP, DNS, Redis, Memcached, MySQL/MariaDB, PostgreSQL, RDP (NLA), SMB (SMBv1, signing), Telnet, VNC, plus TLS and certificate analysis with Nemla's own X.509 reader.
@@ -59,8 +60,10 @@ Nemla (Arabic: **نملة**, "ant") is a small network reconnaissance platform w
 ```bash
 git clone https://github.com/hdada180/nmlah.git
 cd nmlah
-python3 nemla.py --help
+python3 nemla.py --help        # on Windows: python nemla.py --help
 ```
+
+Below, **`nemla` stands for `python3 nemla.py`** run from this folder (on Windows `python nemla.py`). If you install it as a command (see below) it really is the command `nemla`.
 
 Optional, for ARP discovery and raw SYN fingerprinting (needs root):
 
@@ -68,43 +71,52 @@ Optional, for ARP discovery and raw SYN fingerprinting (needs root):
 pip install scapy        # or: pip install -r requirements.txt
 ```
 
-You can also install it as a command: `pip install .` (or `pip install ".[arp]"`), then run `nemla -t ...` or `python -m nemla -t ...`.
+You can also install it as a command: `pip install .` (or `pip install ".[arp]"`), then run `nemla 192.168.1.10` (or `python -m nemla 192.168.1.10`) from any folder.
 
 ## Quick start
 
+Three commands are enough to start:
+
 ```bash
-# a whole subnet, common ports
-sudo python3 nemla.py -t 192.168.1.0/24
-
-# one host, ports 1-1000, plus the common UDP ports
-python3 nemla.py -t 192.168.1.10 -p 1-1000 --udp
-
-# IPv6, and several targets at once
-python3 nemla.py -t 2001:db8::5,192.168.1.10-20
-
-# every report format
-python3 nemla.py -t 192.168.1.10 --json scan.json --csv scan.csv --md scan.md --sarif scan.sarif
-
-# gentle scan: 50 connections per second, at most 5,000 probes
-python3 nemla.py -t 192.168.1.0/24 --rate 50 --max-probes 5000
-
-# Arabic or Hebrew interface and report
-python3 nemla.py -t 192.168.1.10 --lang ar
-
-# use it in CI: exit code 3 on any high finding
-python3 nemla.py -t 10.0.0.0/24 --fail-on high
+nemla                                  # opens the 3D interface: type a target and press Start scan
+nemla 192.168.1.10                     # scan one host: common ports, services, OS guess, findings, a report
+nemla 192.168.1.0/24                   # scan a whole network
 ```
 
-`sudo` is only needed for Scapy (real ARP requests, raw ICMP, SYN fingerprinting). Without it Nemla reads the operating system's neighbour cache and falls back to the system `ping` and plain TCP connections.
+The report is written to `nemla_report.html` in the current folder (`-o` changes that). Then add only what you need:
+
+```bash
+nemla 192.168.1.10 -p 22,80,443        # only these TCP ports (or 1-1000, or all)
+nemla 192.168.1.10 --udp               # plus the common UDP ports
+nemla 2001:db8::5,192.168.1.10-20      # IPv6, and several targets at once
+nemla 192.168.1.10 --json scan.json    # also save JSON (--csv, --md and --sarif work the same way)
+nemla 192.168.1.0/24 --rate 50 --max-probes 5000    # gentle: 50 connections per second, at most 5,000 probes
+nemla 192.168.1.10 --lang ar           # Arabic interface and report (--lang he for Hebrew)
+nemla 10.0.0.0/24 --fail-on high       # for CI: exit code 3 on any high finding
+```
+
+And the other modes are one word each:
+
+```bash
+nemla watch 192.168.1.0/24 15m         # scan again every 15 minutes and say what changed
+nemla diff yesterday.json today.json   # what changed between two saved scans
+nemla guard                            # watch this network for suspicious activity
+nemla ui                               # the 3D interface (the same as running nemla with nothing)
+```
+
+The 1.x form keeps working: `nemla -t 192.168.1.10 --udp` is the same as `nemla 192.168.1.10 --udp`. The words `scan`, `ui`, `guard`, `watch` and `diff` are commands only as the first word; a host that is really called `ui` is scanned with `-t ui`.
+
+`sudo` is only needed for Scapy (real ARP requests, raw ICMP, SYN fingerprinting): `sudo python3 nemla.py 192.168.1.0/24`. Without it Nemla reads the operating system's neighbour cache and falls back to the system `ping` and plain TCP connections.
 
 ## Options
 
 | Option | Description |
 | --- | --- |
-| `-t`, `--target` | IP, hostname, CIDR, `10.0.0.1-50`, `10.0.0.1-10.0.0.50`, IPv6 (`2001:db8::/120`, `fe80::1%eth0`); several separated by commas |
+| `TARGET` (or `-t TARGET`) | IP, hostname, CIDR, `10.0.0.1-50`, `10.0.0.1-10.0.0.50`, IPv6 (`2001:db8::/120`, `fe80::1%eth0`); several separated by commas. `nemla 192.168.1.10` and `nemla -t 192.168.1.10` are the same |
+| `ui`, `guard`, `watch TARGET [EVERY]`, `diff OLD NEW`, `scan TARGET` | The first word of the command: short for `--ui`, `--guard`, `--watch EVERY -t TARGET` (every 15 minutes if EVERY is left out), `--diff OLD NEW` and a plain scan |
 | `-4` / `-6` | Resolve names to IPv4 or IPv6 only (default: the first IPv4 address, else the first IPv6 one) |
 | `--all-addresses` | Scan every address a name resolves to |
-| `-p`, `--ports` | `22`, `22,80,443`, `1-1000` or a mix |
+| `-p`, `--ports` | `22`, `22,80,443`, `1-1000`, `all` (every port, 1-65535) or a mix |
 | `--top-ports` | Also scan the built-in list of common ports (the default when `-p` is omitted) |
 | `--udp` | Also probe the common UDP ports |
 | `--udp-ports LIST` | UDP ports to probe (implies `--udp`) |
@@ -180,9 +192,9 @@ Exposure on a public address (judged with `is_global`, so shared address space a
 Nemla remembers your scans (the newest 60, in your Nemla data folder, each with a random UUID) and compares each new scan with the previous one of the same target: hosts that appeared or vanished, ports that opened or closed (TCP and UDP), services whose product, version or protocol changed, a different operating-system family, and findings that appeared or were resolved.
 
 ```bash
-python3 nemla.py -t 192.168.1.0/24 --json today.json
-python3 nemla.py --diff yesterday.json today.json      # add --fail-on-change for scheduled checks
-python3 nemla.py -t 192.168.1.0/24 --watch 15m --watch-log changes.jsonl
+nemla 192.168.1.0/24 --json today.json
+nemla diff yesterday.json today.json                   # add --fail-on-change for scheduled checks
+nemla watch 192.168.1.0/24 15m --watch-log changes.jsonl
 ```
 
 In the 3D interface open the **History** tab to reopen any saved scan on the map, see its comparison with the previous scan and export it in any format.
@@ -198,7 +210,8 @@ Nemla can also watch a network instead of scanning it:
 Guard alerts carry a **confidence and the evidence** behind it. A changed ARP binding is **not** proof of spoofing: a replaced network card, a DHCP change or a virtual machine looks the same, so Nemla weighs the gateway, how often the binding flips, whether the new address belongs to a known device and whether the old one still answers, and never goes above 0.85. Guard only watches: it never attacks back, never scans other machines and never changes your firewall (for a device you want to block it prints the exact command and leaves running it to you).
 
 ```bash
-python3 nemla.py --guard [--guard-log alerts.jsonl]
+nemla guard
+nemla guard --guard-log alerts.jsonl       # also append every alert to a file
 ```
 
 ## The 3D interface
@@ -208,7 +221,7 @@ Run Nemla with no arguments and it opens its own window: a 3D map of your networ
 ![The Nemla 3D interface showing the demo colony](docs/ui-3d.png)
 
 ```bash
-python3 nemla.py            # opens the 3D interface
+nemla            # opens the 3D interface (the same as: nemla ui)
 ```
 
 - **Colony view:** this computer is the nest, hosts float around it, every open port orbits its host coloured by service type. Drag to orbit, scroll to zoom, click a host.
@@ -220,11 +233,11 @@ python3 nemla.py            # opens the 3D interface
 ### Add Nemla to the Linux applications menu
 
 ```bash
-python3 nemla.py --install-launcher     # menu entry, icon and a `nemla` command, all under ~/.local
-python3 nemla.py --uninstall-launcher
+nemla --install-launcher     # menu entry, icon and a `nemla` command, all under ~/.local
+nemla --uninstall-launcher
 ```
 
-In a Chromium-family browser it opens as its own window, otherwise in your default browser; closing the window stops Nemla. Browsers refuse to start as root, so for ARP discovery run `sudo python3 nemla.py --no-browser` and open the printed address. Over SSH forward the port (`ssh -L PORT:127.0.0.1:PORT host`).
+In a Chromium-family browser it opens as its own window, otherwise in your default browser; closing the window stops Nemla. Browsers refuse to start as root, so for ARP discovery run `sudo python3 nemla.py ui --no-browser` and open the printed address. Over SSH forward the port (`ssh -L PORT:127.0.0.1:PORT host`).
 
 ## Security
 
@@ -271,7 +284,7 @@ IPv4 only.
 ## Testing and benchmarks
 
 ```bash
-python -m pytest                                   # the whole suite (~870 tests, about two minutes)
+python -m pytest                                   # the whole suite (about 1,200 tests, roughly three minutes)
 python -m ruff check . && python -m mypy           # lint and types (CI checks Linux, Windows and macOS typing)
 python -m benchmarks.bench_scan                    # 100 / 1,000 / 10,000 / 65,535 ports against a loopback target
 python -m benchmarks.bench_network                 # 10 / 50 / 100 synthetic hosts, some broken on purpose
@@ -313,7 +326,7 @@ RDP, SMB or Redis on any port, and you choose it: `--intensity 1` or `--no-banne
 
 ## Upgrading from 1.x
 
-`python3 nemla.py ...` and `import nemla` keep working, and every option and output field of 1.x is still there (new fields were added). Changes you may notice: IPv6 targets are accepted; several targets can be given at once; scan ids are UUIDs (old timestamp ids still load); `history` and `guard` moved to `nemla.history` and `nemla.guard` (the `nemla_ui.*` names still resolve to the same modules); the `http_plain` finding needs proof that HTTPS was scanned; `--timeout 0` and other invalid numbers are now rejected.
+`python3 nemla.py ...` and `import nemla` keep working, `-t TARGET` still works next to the new plain `TARGET`, and every option and output field of 1.x is still there (new fields were added). Changes you may notice: IPv6 targets are accepted; several targets can be given at once; scan ids are UUIDs (old timestamp ids still load); `history` and `guard` moved to `nemla.history` and `nemla.guard` (the `nemla_ui.*` names still resolve to the same modules); the `http_plain` finding needs proof that HTTPS was scanned; `--timeout 0` and other invalid numbers are now rejected.
 
 ## Development
 

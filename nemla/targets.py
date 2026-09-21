@@ -199,7 +199,7 @@ _PORT_ITEM = re.compile(r"([0-9]{1,5})(?:-([0-9]{1,5}))?")
 
 
 def parse_ports(spec: str) -> list:
-    """'22', '22,80,443' or '1-1000' (and mixes) -> sorted, de-duplicated ports.
+    """'22', '22,80,443', '1-1000' or 'all' (and mixes) -> sorted, de-duplicated ports.
 
     Every bound is checked before a range is expanded, so a hostile '1-99999999999'
     is refused instead of eating memory.
@@ -211,6 +211,9 @@ def parse_ports(spec: str) -> list:
     ports: set = set()
     for part in re.split(r"[,\s]+", spec.strip()):
         if not part:
+            continue
+        if part.lower() == "all":
+            ports.update(range(1, 65536))
             continue
         m = _PORT_ITEM.fullmatch(part)
         if not m:

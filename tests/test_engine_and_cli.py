@@ -154,7 +154,7 @@ def test_bad_arguments_exit_with_code_2_and_a_usage_message():
 
 def test_a_target_is_required_unless_the_ui_starts():
     result = run("nemla.py", "-p", "80")
-    assert result.returncode == 2 and "-t/--target" in result.stderr
+    assert result.returncode == 2 and "Give a target" in result.stderr and "nemla 192.168.1.10" in result.stderr
 
 
 def test_help_documents_the_new_switches():

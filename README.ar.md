@@ -10,6 +10,7 @@
 
 ## شو الجديد بالإصدار 2.0
 
+- **أوامر أقصر.** `nemla 192.168.1.10` بدل `nemla -t 192.168.1.10`؛ و`nemla watch` و`nemla diff` و`nemla guard` و`nemla ui` للأوضاع؛ و`-p all` لكل المنافذ. وكل خيارات 1.x لسا شغّالة.
 - **معمارية حقيقية.** ملف `nemla.py` الواحد (1,900 سطر) صار حزمة `nemla/`: الأهداف، الاكتشاف، مجدوِل محدود، فاحصات TCP وUDP، إضافة صغيرة لكل بروتوكول، تخمين النظام، الملاحظات، التقارير، السجل، والحراسة. الأمر `python3 nemla.py ...` و`import nemla` بيضلّوا شغّالين. شوف [docs/architecture.md](docs/architecture.md).
 - **IPv6** بكل مكان (الأهداف، الفحص، الاكتشاف، التقارير، السجل، الواجهة).
 - **فحص UDP** بحالات صادقة: `open` و`closed` و`open|filtered` و`unknown`، بمعدّل محدود وبشكل آمن.
@@ -55,10 +56,12 @@
 ```bash
 git clone https://github.com/hdada180/nmlah.git
 cd nmlah
-python3 nemla.py --help
+python3 nemla.py --help        # على ويندوز: python nemla.py --help
 ```
 
 <div dir="rtl">
+
+بباقي هالوثيقة، **`nemla` معناها `python3 nemla.py`** من هالمجلد (على ويندوز `python nemla.py`). وإذا ثبّتها كأمر (شوف تحت) بتصير فعلاً الأمر `nemla`.
 
 اختياري، لاكتشاف ARP وبصمة SYN الخام (بدها root):
 
@@ -70,47 +73,64 @@ pip install scapy        # أو: pip install -r requirements.txt
 
 <div dir="rtl">
 
-وبتقدر تثبّتها كأمر: `pip install .` (أو `pip install ".[arp]"`)، وبعدين `nemla -t ...` أو `python -m nemla -t ...`.
+وبتقدر تثبّتها كأمر: `pip install .` (أو `pip install ".[arp]"`)، وبعدين `nemla 192.168.1.10` (أو `python -m nemla 192.168.1.10`) من أي مجلد.
 
 ## بداية سريعة
+
+تلات أوامر بتكفي للبداية:
 
 </div>
 
 ```bash
-# شبكة كاملة، المنافذ الشائعة
-sudo python3 nemla.py -t 192.168.1.0/24
-
-# جهاز واحد، المنافذ 1-1000، مع منافذ UDP الشائعة
-python3 nemla.py -t 192.168.1.10 -p 1-1000 --udp
-
-# IPv6، وعدة أهداف مع بعض
-python3 nemla.py -t 2001:db8::5,192.168.1.10-20
-
-# كل صيغ التقارير
-python3 nemla.py -t 192.168.1.10 --json scan.json --csv scan.csv --md scan.md --sarif scan.sarif
-
-# فحص هادي: 50 اتصال بالثانية، وبحد أقصى 5000 فحص
-python3 nemla.py -t 192.168.1.0/24 --rate 50 --max-probes 5000
-
-# واجهة وتقرير بالعربي أو العبري
-python3 nemla.py -t 192.168.1.10 --lang ar
-
-# للاستخدام بأنظمة CI: رمز خروج 3 عند أي ملاحظة عالية
-python3 nemla.py -t 10.0.0.0/24 --fail-on high
+nemla                                  # بيفتح الواجهة ثلاثية الأبعاد: اكتب الهدف واضغط ابدأ الفحص
+nemla 192.168.1.10                     # فحص جهاز واحد: المنافذ الشائعة، الخدمات، تخمين النظام، الملاحظات، وتقرير
+nemla 192.168.1.0/24                   # فحص شبكة كاملة
 ```
 
 <div dir="rtl">
 
-الـ `sudo` مطلوب فقط لـ Scapy (طلبات ARP حقيقية، ICMP خام، بصمة SYN). بدونه بتقرأ نملة جدول الجيران بالنظام وبترجع لأمر `ping` وللاتصالات العادية.
+التقرير بينكتب باسم `nemla_report.html` بالمجلد الحالي (والخيار `-o` بيغيّر هاد). وبعدين ضيف بس اللي بتحتاجه:
+
+</div>
+
+```bash
+nemla 192.168.1.10 -p 22,80,443        # هاي المنافذ بس (أو 1-1000، أو all)
+nemla 192.168.1.10 --udp               # مع منافذ UDP الشائعة
+nemla 2001:db8::5,192.168.1.10-20      # IPv6، وعدة أهداف مع بعض
+nemla 192.168.1.10 --json scan.json    # حفظ JSON كمان (وبنفس الطريقة --csv و--md و--sarif)
+nemla 192.168.1.0/24 --rate 50 --max-probes 5000    # فحص هادي: 50 اتصال بالثانية، وبحد أقصى 5000 فحص
+nemla 192.168.1.10 --lang ar           # واجهة وتقرير بالعربي (و--lang he للعبري)
+nemla 10.0.0.0/24 --fail-on high       # لأنظمة CI: رمز خروج 3 عند أي ملاحظة عالية
+```
+
+<div dir="rtl">
+
+وباقي الأوضاع كل واحد بكلمة وحدة:
+
+</div>
+
+```bash
+nemla watch 192.168.1.0/24 15m         # إعادة الفحص كل 15 دقيقة والإبلاغ عن اللي تغيّر
+nemla diff yesterday.json today.json   # شو تغيّر بين فحصين محفوظين
+nemla guard                            # مراقبة الشبكة من النشاط المشبوه
+nemla ui                               # الواجهة ثلاثية الأبعاد (نفس تشغيل nemla بدون أي شي)
+```
+
+<div dir="rtl">
+
+الصيغة القديمة لسا شغّالة: `nemla -t 192.168.1.10 --udp` هي نفسها `nemla 192.168.1.10 --udp`. والكلمات `scan` و`ui` و`guard` و`watch` و`diff` بتكون أوامر بس إذا كانت أول كلمة؛ وجهاز اسمه فعلاً `ui` بتفحصه هيك: `-t ui`.
+
+الـ `sudo` مطلوب فقط لـ Scapy (طلبات ARP حقيقية، ICMP خام، بصمة SYN): `sudo python3 nemla.py 192.168.1.0/24`. بدونه بتقرأ نملة جدول الجيران بالنظام وبترجع لأمر `ping` وللاتصالات العادية.
 
 ## الخيارات
 
 | الخيار | الوصف |
 | --- | --- |
-| `-t`, `--target` | IP أو اسم أو CIDR أو `10.0.0.1-50` أو `10.0.0.1-10.0.0.50` أو IPv6؛ وعدة أهداف مفصولة بفواصل |
+| `TARGET` (أو `-t TARGET`) | IP أو اسم أو CIDR أو `10.0.0.1-50` أو `10.0.0.1-10.0.0.50` أو IPv6؛ وعدة أهداف مفصولة بفواصل. `nemla 192.168.1.10` و`nemla -t 192.168.1.10` نفس الشي |
+| `ui` و`guard` و`watch TARGET [EVERY]` و`diff OLD NEW` و`scan TARGET` | أول كلمة بالأمر: اختصار لـ `--ui` و`--guard` و`--watch EVERY -t TARGET` (كل 15 دقيقة إذا حذفت EVERY) و`--diff OLD NEW` وفحص عادي |
 | `-4` / `-6` | حلّ الأسماء لـ IPv4 أو IPv6 فقط (الافتراضي: أول عنوان IPv4، وإلا أول IPv6) |
 | `--all-addresses` | فحص كل عنوان بيحلّه الاسم |
-| `-p`, `--ports` | `22` أو `22,80,443` أو `1-1000` أو خليط |
+| `-p`, `--ports` | `22` أو `22,80,443` أو `1-1000` أو `all` (كل المنافذ، 1-65535) أو خليط |
 | `--top-ports` | فحص قائمة المنافذ الشائعة كمان (الافتراضي إذا ما حطيت `-p`) |
 | `--udp` | فحص منافذ UDP الشائعة كمان |
 | `--udp-ports LIST` | منافذ UDP للفحص (بيفعّل `--udp`) |
@@ -192,9 +212,9 @@ python3 nemla.py -t 10.0.0.0/24 --fail-on high
 </div>
 
 ```bash
-python3 nemla.py -t 192.168.1.0/24 --json today.json
-python3 nemla.py --diff yesterday.json today.json      # أضف --fail-on-change للفحوصات المجدولة
-python3 nemla.py -t 192.168.1.0/24 --watch 15m --watch-log changes.jsonl
+nemla 192.168.1.0/24 --json today.json
+nemla diff yesterday.json today.json                   # أضف --fail-on-change للفحوصات المجدولة
+nemla watch 192.168.1.0/24 15m --watch-log changes.jsonl
 ```
 
 <div dir="rtl">
@@ -214,7 +234,8 @@ python3 nemla.py -t 192.168.1.0/24 --watch 15m --watch-log changes.jsonl
 </div>
 
 ```bash
-python3 nemla.py --guard [--guard-log alerts.jsonl]
+nemla guard
+nemla guard --guard-log alerts.jsonl       # وكمان بيضيف كل تنبيه لملف
 ```
 
 <div dir="rtl">
@@ -228,7 +249,7 @@ python3 nemla.py --guard [--guard-log alerts.jsonl]
 </div>
 
 ```bash
-python3 nemla.py            # بيفتح الواجهة ثلاثية الأبعاد
+nemla            # بيفتح الواجهة ثلاثية الأبعاد (نفسها: nemla ui)
 ```
 
 <div dir="rtl">
@@ -244,13 +265,13 @@ python3 nemla.py            # بيفتح الواجهة ثلاثية الأبع�
 </div>
 
 ```bash
-python3 nemla.py --install-launcher     # عنصر قائمة وأيقونة وأمر `nemla`، كلها تحت ~/.local
-python3 nemla.py --uninstall-launcher
+nemla --install-launcher     # عنصر قائمة وأيقونة وأمر `nemla`، كلها تحت ~/.local
+nemla --uninstall-launcher
 ```
 
 <div dir="rtl">
 
-بمتصفح من عائلة Chromium بتفتح كنافذة لحالها، وإلا بمتصفحك الافتراضي؛ وإغلاق النافذة بيوقف نملة. المتصفحات بترفض تشتغل كـ root، فلاكتشاف ARP شغّل `sudo python3 nemla.py --no-browser` وافتح العنوان المطبوع. وعبر SSH حوّل المنفذ (`ssh -L PORT:127.0.0.1:PORT host`).
+بمتصفح من عائلة Chromium بتفتح كنافذة لحالها، وإلا بمتصفحك الافتراضي؛ وإغلاق النافذة بيوقف نملة. المتصفحات بترفض تشتغل كـ root، فلاكتشاف ARP شغّل `sudo python3 nemla.py ui --no-browser` وافتح العنوان المطبوع. وعبر SSH حوّل المنفذ (`ssh -L PORT:127.0.0.1:PORT host`).
 
 ## الأمان
 
@@ -298,7 +319,7 @@ python3 nemla.py --uninstall-launcher
 
 ## الترقية من 1.x
 
-الأمر `python3 nemla.py ...` و`import nemla` بيضلّوا شغّالين، وكل خيار وحقل خرج من 1.x لسا موجود (وانضافت حقول جديدة). التغييرات اللي ممكن تلاحظها: أهداف IPv6 مقبولة؛ بتقدر تعطي عدة أهداف مع بعض؛ معرّفات الفحص صارت UUID (والمعرّفات القديمة بتنفتح)؛ `history` و`guard` انتقلوا لـ `nemla.history` و`nemla.guard` (وأسماء `nemla_ui.*` لسا بتشير لنفس الوحدات)؛ ملاحظة `http_plain` بتحتاج إثبات إنه انفحص HTTPS؛ و`--timeout 0` وباقي الأرقام غير الصالحة صارت مرفوضة.
+الأمر `python3 nemla.py ...` و`import nemla` بيضلّوا شغّالين، والخيار `-t TARGET` لسا شغّال جنب `TARGET` العادي الجديد، وكل خيار وحقل خرج من 1.x لسا موجود (وانضافت حقول جديدة). التغييرات اللي ممكن تلاحظها: أهداف IPv6 مقبولة؛ بتقدر تعطي عدة أهداف مع بعض؛ معرّفات الفحص صارت UUID (والمعرّفات القديمة بتنفتح)؛ `history` و`guard` انتقلوا لـ `nemla.history` و`nemla.guard` (وأسماء `nemla_ui.*` لسا بتشير لنفس الوحدات)؛ ملاحظة `http_plain` بتحتاج إثبات إنه انفحص HTTPS؛ و`--timeout 0` وباقي الأرقام غير الصالحة صارت مرفوضة.
 
 ## التطوير
 
