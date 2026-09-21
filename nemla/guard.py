@@ -26,14 +26,18 @@ import threading
 import time
 from pathlib import Path
 
-from .discovery.arp import neighbor_sweep, nudge_arp, parse_arp_table, read_arp_table
+from . import privileges
+from .discovery.arp import neighbor_sweep, neighbor_table_status, nudge_arp, parse_arp_table, read_arp_table
 from .discovery.mac import mac_is_local, normalize_mac
 from .log import logger
+from .net import ip_sort_key, parse_ip
 
 _REEXPORTED = (nudge_arp, parse_arp_table, read_arp_table)  # kept importable from here for older code
 
 DEFAULT_DECOYS = (2222, 2323, 5901, 8888, 3307)
 MAX_ALERTS = 500
+EMPTY_SWEEPS_BEFORE_NOTICE = 3      # sweeps that see nobody at all before the owner is told
+MAX_NOTICES = 20                    # distinct notices per run: a broken system must not flood the alert list
 LOG_LIMIT = 5 * 1024 * 1024
 
 # What a decoy says when someone connects. Deception only: no login is ever accepted.
@@ -332,6 +336,21 @@ def arp_change_assessment(ip, old, new, table, state, is_gateway, vendor_lookup=
     return round(min(0.85, max(0.10, confidence)), 2), evidence
 
 
+def sanitize_table(table) -> tuple:
+    """(clean, dropped): only well-formed {IP: MAC} pairs. Anything else (a garbled line, a broadcast or all-zero
+    hardware address, a multicast IP, the wrong type) is counted and skipped: it must never stop a sweep."""
+    clean: dict = {}
+    dropped = 0
+    for ip, mac in (table.items() if isinstance(table, dict) else ()):
+        addr = parse_ip(ip) if isinstance(ip, str) else None
+        normal = normalize_mac(mac) if isinstance(mac, str) else None
+        if addr is None or normal is None or addr.is_multicast or addr.is_unspecified:
+            dropped += 1
+            continue
+        clean[str(addr)] = normal
+    return clean, dropped
+
+
 def evaluate_sweep(table: dict, state: dict, gateway=None, now=None, vendor_lookup=None) -> list:
     """Compare a fresh {ip: mac} sweep with what we know. Updates `state` and returns
     the alerts to raise. The very first sweep only learns (everything is trusted).
@@ -340,9 +359,10 @@ def evaluate_sweep(table: dict, state: dict, gateway=None, now=None, vendor_look
     proves, never that an attack is certain."""
     now = now or time.time()
     state.setdefault("flaps", {})
+    table, _ = sanitize_table(table)
     alerts = []
     learning = state["learning"]
-    for ip, mac in sorted(table.items(), key=lambda kv: ipaddress.ip_address(kv[0])):
+    for ip, mac in sorted(table.items(), key=lambda kv: ip_sort_key(kv[0])):
         previous = state["bindings"].get(ip)
         if previous and previous != mac:
             state["flaps"][ip] = state["flaps"].get(ip, 0) + 1
@@ -449,6 +469,33 @@ class Guard:
         self._stop = threading.Event()
         self._tripwire: Tripwire | None = None
         self._thread: threading.Thread | None = None
+        self._custom_sweep = sweep is not None
+        self._notices: set = set()
+        self._empty_sweeps = 0
+        self.last_error = ""
+
+    # -- limits of the watch, said out loud ----------------------------------
+
+    def notice(self, code: str, key: str = "", evidence=(), **detail) -> None:
+        """Tell the owner about something that limits what the Guard can see: one `guard_notice` alert per
+        distinct problem (in the alert stream, the JSON-lines file, the CLI and the page) and a log line."""
+        with self._lock:
+            token = (code, key)
+            if token in self._notices or len(self._notices) >= MAX_NOTICES:
+                return
+            self._notices.add(token)
+        logger.warning("guard: %s %s %s", code, detail or "", "; ".join(evidence))
+        self.log.add({"kind": "guard_notice", "severity": "info", "src_ip": None, "mac": None,
+                      "detail": {"code": code, **detail}, "evidence": list(evidence)})
+
+    def _check_environment(self) -> None:
+        if self.interval and not self._custom_sweep:
+            if not self.network:
+                self.notice("no_network", evidence=["no interface with a private LAN address was found"])
+            else:
+                usable, missing = neighbor_table_status()
+                if not usable:
+                    self.notice("neighbor_table_unreadable", evidence=[f"missing: {missing}"])
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -459,6 +506,7 @@ class Guard:
         self._tripwire = Tripwire(self.ports, self._hit, self.host)
         self.listening, self.failed = self._tripwire.start()
         self.running = True
+        self._check_environment()
         if self.network and self.interval:
             self._thread = threading.Thread(target=self._loop, daemon=True)
             self._thread.start()
@@ -473,12 +521,18 @@ class Guard:
         self.listening = []
 
     def status(self) -> dict:
+        usable, missing = neighbor_table_status()
         return {
             "running": self.running, "decoys": self.listening, "failed": self.failed,
             "network": self.network, "interval": self.interval, "gateway": self.gateway,
             "learning": self.state["learning"], "trusted": len(self.state["devices"]),
             "unknown": len(self.state["unknown"]), "alerts": len(self.log.alerts),
-            "errors": self.errors,
+            "errors": self.errors, "last_error": self.last_error,
+            "notices": sorted({code for code, _ in self._notices}),
+            # what the watch relies on: the OS neighbour table and ordinary sockets, never packet capture,
+            # so it needs neither Scapy nor administrator rights
+            "capabilities": {"neighbor_table": usable, "neighbor_table_missing": missing,
+                             "elevated": privileges.is_elevated(), "needs_elevation": False},
         }
 
     # -- signals -------------------------------------------------------------
@@ -504,7 +558,16 @@ class Guard:
                           "detail": {"count": count, "ports": ports, "sample": _printable(data)}})
 
     def sweep_once(self) -> list:
-        table = self._sweep_fn()
+        table, dropped = sanitize_table(self._sweep_fn())
+        if dropped:
+            self.notice("bad_entries", count=dropped, evidence=[f"{dropped} entr{'y' if dropped == 1 else 'ies'} skipped"])
+        if table or not (self.network or self._custom_sweep):
+            self._empty_sweeps = 0
+        else:
+            self._empty_sweeps += 1
+            if self._empty_sweeps == EMPTY_SWEEPS_BEFORE_NOTICE:
+                self.notice("sweep_empty", count=self._empty_sweeps,
+                            evidence=[f"network {self.network}: {self._empty_sweeps} sweeps in a row saw no device"])
         with self._lock:
             alerts = evaluate_sweep(table, self.state, self.gateway, vendor_lookup=self.vendor_lookup)
             if self.state_path:
@@ -521,9 +584,11 @@ class Guard:
         while not self._stop.is_set():
             try:
                 self.sweep_once()
-            except Exception:
+            except Exception as exc:
                 self.errors += 1
+                self.last_error = f"{type(exc).__name__}: {exc}"[:200]
                 logger.warning("guard sweep failed", exc_info=True)
+                self.notice("sweep_failed", key=self.last_error, evidence=[self.last_error])
             self._stop.wait(self.interval)
 
     # -- the owner's decisions -----------------------------------------------

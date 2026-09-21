@@ -217,7 +217,7 @@ def poke(port, payload=b"", read=False):
 
 def make_guard(**kw):
     log = guard.AlertLog()
-    g = guard.Guard(log, ports=kw.pop("ports", [0]), host="127.0.0.1", network=None,
+    g = guard.Guard(log, ports=kw.pop("ports", [0]), host="127.0.0.1", network=None, interval=kw.pop("interval", 0),
                     ignore_local=False, gateway=GW, **kw)
     return log, g
 
@@ -264,7 +264,7 @@ def test_tripwire_speaks_like_the_service_it_imitates(monkeypatch):
 
 def test_own_and_trusted_addresses_are_ignored():
     log = guard.AlertLog()
-    quiet = guard.Guard(log, ports=[0], host="127.0.0.1", network=None, gateway=GW)  # ignore_local defaults on
+    quiet = guard.Guard(log, ports=[0], host="127.0.0.1", network=None, interval=0, gateway=GW)  # ignore_local defaults on
     port = quiet.start()["decoys"][0]
     try:
         poke(port)

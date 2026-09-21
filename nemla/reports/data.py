@@ -44,7 +44,7 @@ def csv_text(hosts: list, lang=None) -> str:
     buf = io.StringIO(newline="")
     writer = csv.writer(buf)
     writer.writerow(CSV_COLUMNS)
-    for h in hosts:
+    for h in hosts_for_report(hosts, lang):
         guess = h.get("os") if isinstance(h.get("os"), dict) else {}
         base = [h["ip"], h.get("mac") or "", h.get("vendor") or "", h.get("os_guess") or os_text(h, lang),
                 h.get("ttl") or ""]

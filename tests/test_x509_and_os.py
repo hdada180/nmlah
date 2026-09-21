@@ -8,6 +8,7 @@ import pytest
 
 import nemla
 from nemla import os_detection as osd
+from nemla import privileges
 from nemla.fingerprint import tls as tlsmod
 from nemla.fingerprint.x509 import X509Error, parse_certificate
 
@@ -241,7 +242,7 @@ def test_syn_evidence_feeds_the_guess_but_stays_heuristic():
 
 
 def test_syn_fingerprint_without_scapy_is_a_clean_none():
-    if osd.HAVE_SCAPY:
+    if privileges.detect().syn_fingerprint:
         pytest.skip("scapy is installed here")
     assert osd.syn_fingerprint("127.0.0.1", 80) is None and osd.syn_fingerprint("::1", 80) is None
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -61,6 +62,21 @@ def _command(cmd: list, timeout: float = 5.0) -> str:
     except (OSError, subprocess.SubprocessError) as exc:
         logger.debug("%s failed: %s", cmd[0], exc)
         return ""
+
+
+def neighbor_table_status() -> tuple:
+    """(True, "") if this system's ARP/neighbour table can be read at all, else (False, what is missing).
+
+    An unreadable table is not an error to swallow: the Guard reports it, because without it new devices
+    and changed addresses can never be seen.
+    """
+    if sys.platform.startswith("linux"):
+        if Path("/proc/net/arp").exists() or shutil.which("ip"):
+            return True, ""
+        return False, "/proc/net/arp and the ip command"
+    if shutil.which("arp"):
+        return True, ""
+    return False, "the arp command"
 
 
 def read_arp_table() -> dict:

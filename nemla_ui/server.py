@@ -35,6 +35,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from nemla import guard as guard_mod
 from nemla import history as history_mod
+from nemla import privileges
 from nemla import reports as reports_mod
 from nemla.config import UDP_PORTS
 from nemla.log import logger
@@ -123,15 +124,7 @@ def local_network_hint():
 
 
 def is_root() -> bool:
-    if hasattr(os, "geteuid"):
-        return os.geteuid() == 0
-    if sys.platform == "win32":
-        try:
-            import ctypes
-            return bool(ctypes.windll.shell32.IsUserAnAdmin())
-        except (AttributeError, OSError):
-            return False
-    return False
+    return privileges.is_elevated()
 
 
 def _number(body: dict, key: str, default, low, high, kind=float):
@@ -359,7 +352,7 @@ class App:
         return {
             "version": engine.__version__, "platform": sys.platform,
             "hostname": socket.gethostname(), "local_ip": ip, "suggested_target": network,
-            "root": is_root(), "scapy": bool(engine.HAVE_SCAPY),
+            "root": is_root(), "scapy": bool(engine.HAVE_SCAPY), "capabilities": privileges.detect().as_dict(),
             "top_ports": len(engine.TOP_PORTS), "max_hosts": MAX_HOSTS, "lang": self.lang,
             "udp_ports": list(UDP_PORTS), "formats": list(reports_mod.FORMATS),
             "job": {"id": job.id, "target": job.target, "finished": job.closed} if job else None,

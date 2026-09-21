@@ -53,11 +53,27 @@ def os_text(host: dict, lang=None) -> str:
     return f"{name} ({round(guess['confidence'] * 100)}%{est})"
 
 
+def scrub(value):
+    """Text that came from the network, made safe to print: control characters, terminal escapes and the
+    invisible direction controls (which can reorder what is around them) become spaces.
+
+    The scanner already cleans banners when it records them; this is the second line of defence for records
+    that come from somewhere else (a history file, a hand-edited or older JSON)."""
+    if isinstance(value, str):
+        return value if value.isprintable() else "".join(ch if ch.isprintable() else " " for ch in value)
+    if isinstance(value, dict):
+        return {key: scrub(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [scrub(item) for item in value]
+    return value
+
+
 def hosts_for_report(hosts: list, lang=None) -> list:
-    """Copies of the host records with findings rendered in the report language."""
+    """Copies of the host records, scrubbed, with findings rendered in the report language (those texts are ours:
+    they keep the direction marks the translations use on purpose)."""
     out = []
     for host in hosts:
-        copy = dict(host)
+        copy = {key: scrub(value) for key, value in host.items() if key != "findings"}
         copy["findings"] = localized(host.get("findings", []), lang_of(lang))
         out.append(copy)
     return out

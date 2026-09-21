@@ -24,10 +24,11 @@ from .config import DISCOVERY_PORTS, ScanOptions, __version__
 from .discovery import discover_hosts, get_ttl, mac_vendor
 from .discovery.arp import HAVE_SCAPY
 from .findings import assess_host, summarize_findings
+from . import privileges
 from .i18n import current_lang, t, use_lang
 from .log import Diagnostics, log, logger
 from .net import ip_sort_key
-from .os_detection import OSGuess, guess_os_detailed, os_display, syn_fingerprint
+from .os_detection import OSGuess, SynProbe, guess_os_detailed, os_display
 from .scanning.scheduler import Job, ProbeBudget, RateLimiter, Scheduler, is_failure
 from .scanning.tcp import round_robin, scan_port
 from .scanning.udp import scan_udp_port
@@ -74,6 +75,11 @@ def _run(target, ips, ports, opts: ScanOptions, emit, cancel, diagnostics):
     diagnostics = diagnostics if diagnostics is not None else Diagnostics()
     budget = ProbeBudget(opts.max_probes)
     started = time.monotonic()
+    caps = privileges.detect()
+    syn = SynProbe(caps, diagnostics)
+    if not opts.no_os and not syn.available:      # say so once, in the log and in the report's warnings
+        log(t("cap_syn_off_" + syn.code))
+        diagnostics.warn("syn_fingerprint_off", "TCP/IP fingerprinting is off: " + syn.reason)
     total_addresses = len(ips) if hasattr(ips, "__len__") else sum(1 for _ in ips)
     logger.debug("scan %s: %d address(es), %d TCP port(s), %d UDP port(s), threads=%d per_host=%d timeout=%s intensity=%d",
                  target, total_addresses, len(ports), len(opts.udp_ports), opts.threads, opts.per_host, opts.timeout,
@@ -108,7 +114,7 @@ def _run(target, ips, ports, opts: ScanOptions, emit, cancel, diagnostics):
         log(t("no_hosts"))
     elif not cancel.is_set():
         try:
-            hosts = _scan_hosts(hosts_map, ports, opts, budget, cancel, diagnostics, send)
+            hosts = _scan_hosts(hosts_map, ports, opts, budget, cancel, diagnostics, send, syn)
         except KeyboardInterrupt:
             cancel.set()
             log(t("interrupted"))
@@ -136,12 +142,14 @@ def _run(target, ips, ports, opts: ScanOptions, emit, cancel, diagnostics):
                     "no_ping": opts.no_ping, "no_os": opts.no_os, "no_banner": opts.no_banner,
                     "udp": bool(opts.udp_ports), "udp_timeout": opts.udp_timeout, "udp_rate": opts.udp_rate},
         "capabilities": {"scapy": bool(HAVE_SCAPY), "ipv6": bool(socket.has_ipv6), "platform": sys.platform,
-                         "version": __version__},
+                         "version": __version__, "elevated": caps.elevated, "raw_socket": caps.raw_socket,
+                         "syn_fingerprint": (not opts.no_os) and syn.available,
+                         "syn_fingerprint_reason": "" if opts.no_os else syn.reason},
     }
     return hosts, meta
 
 
-def _scan_hosts(hosts_map: dict, ports: list, opts: ScanOptions, budget, cancel, diagnostics, send) -> list:
+def _scan_hosts(hosts_map: dict, ports: list, opts: ScanOptions, budget, cancel, diagnostics, send, syn) -> list:
     order = sorted(hosts_map, key=ip_sort_key)
     per_host_jobs = len(ports) + len(opts.udp_ports)
     log(t("port_count", n=len(ports)))
@@ -175,9 +183,9 @@ def _scan_hosts(hosts_map: dict, ports: list, opts: ScanOptions, budget, cancel,
             guess, text = OSGuess(), t("os_skipped")
         else:
             ttl = get_ttl(state.ip, cancel)
-            syn = syn_fingerprint(state.ip, state.tcp[0]["port"], opts.timeout) if state.tcp else None
+            traits = syn(state.ip, state.tcp[0]["port"], opts.timeout) if state.tcp else None
             vendor = mac_vendor(state.info.get("mac"))
-            guess = guess_os_detailed(ttl, state.tcp + state.udp, syn, vendor)
+            guess = guess_os_detailed(ttl, state.tcp + state.udp, traits, vendor)
             text = os_display(guess, ttl)
         host = {
             "ip": state.ip, "mac": state.info.get("mac"), "discovery": state.info.get("method"),

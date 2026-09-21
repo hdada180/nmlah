@@ -141,7 +141,8 @@
     const root = document.documentElement.style;
     root.setProperty('--il', (w <= 900 ? 0 : l) + 'px'); root.setProperty('--ir', (w <= 900 ? 0 : r) + 'px');
     root.setProperty('--hud-l', (w <= 900 ? 0 : hl) + 'px'); root.setProperty('--hud-r', (w <= 900 ? 0 : hr) + 'px');
-    root.setProperty('--hud-h', Math.ceil(hud.getBoundingClientRect().height) + 'px');
+    const hudBox = hud.getBoundingClientRect();
+    root.setProperty('--hud-h', Math.ceil(hudBox.height) + 'px'); root.setProperty('--hud-b', Math.ceil(hudBox.bottom) + 'px');
   }
 
   /* -------------------------------------------------------------- render */
@@ -688,6 +689,7 @@
   }
   function alertText(a) {
     const d = a.detail || {};
+    if (a.kind === 'guard_notice') return t('guard.t.notice.' + d.code, d);
     let text = t('guard.t.' + (a.kind === 'arp_change' && d.gateway ? 'arp_gateway' : a.kind),
       Object.assign({ src: a.src_ip, ip: a.src_ip, mac: a.mac }, d));
     if (a.kind === 'new_device') {

@@ -364,6 +364,8 @@ def alert_text(alert: dict) -> str:
         return t("g_arp_dup", mac=alert["mac"], ip=alert["src_ip"], ips=", ".join(detail.get("ips", [])))
     if kind == "baseline":
         return t("g_baseline", devices=detail.get("devices", 0))
+    if kind == "guard_notice":
+        return t("g_notice_" + str(detail.get("code", "")), **{k: v for k, v in detail.items() if k != "code"})
     return kind
 
 
@@ -392,8 +394,6 @@ def run_guard(args) -> int:
     status = watcher.start()
     for port, reason in status["failed"].items():
         log(t("g_port_failed", port=port, reason=reason))
-    if not network:
-        log(t("g_no_network"))
     log(t("g_started", ports=", ".join(str(p) for p in status["decoys"]) or "-"))
     seen = 0
     try:

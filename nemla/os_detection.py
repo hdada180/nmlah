@@ -17,9 +17,10 @@ never reaches 1: banners can be edited by the host's owner.
 from __future__ import annotations
 
 import re
+import errno
 from dataclasses import dataclass, field
 
-from .discovery.ping import HAVE_SCAPY
+from . import privileges
 from .i18n import t
 from .log import logger
 
@@ -108,20 +109,65 @@ def classify_syn_ack(window: int, options, df: bool = True, ttl=None) -> list:
     return votes
 
 
-def syn_fingerprint(ip: str, port: int, timeout: float = 1.0):
-    """Send one SYN with Scapy and return the SYN-ACK's traits, or None (no Scapy, no root, no answer)."""
-    if not HAVE_SCAPY or sr1 is None or ":" in ip:
-        return None
-    try:
-        options = [("MSS", 1460), ("SAckOK", b""), ("Timestamp", (1, 0)), ("NOP", None), ("WScale", 7)]
-        reply = sr1(IP(dst=ip) / TCP(dport=port, flags="S", options=options), timeout=timeout, verbose=0)
-        if reply is None or not reply.haslayer(TCP) or (int(reply[TCP].flags) & 0x12) != 0x12:
+def _refused(exc: BaseException) -> bool:
+    """Does this error mean the system will not let us send raw packets at all (as opposed to one bad host)?"""
+    if isinstance(exc, PermissionError) or (isinstance(exc, OSError) and exc.errno in (errno.EPERM, errno.EACCES)):
+        return True
+    return isinstance(exc, RuntimeError) or type(exc).__name__ == "Scapy_Exception"   # no Npcap/libpcap, no layer 2
+
+
+class SynProbe:
+    """Sends the fingerprinting SYN, when the system allows it.
+
+    Without Scapy or raw-socket rights it is off from the start, and it switches itself off (once, and
+    visibly, through `diagnostics`) if the system refuses mid-scan. Callers just get None and go on
+    with TTL, banners and ports: a missing privilege never breaks or slows a scan.
+    """
+
+    def __init__(self, capabilities=None, diagnostics=None):
+        caps = capabilities if capabilities is not None else privileges.detect()
+        self.diagnostics = diagnostics
+        self.reason = "" if caps.syn_fingerprint else caps.reasons.get("syn_fingerprint", "not available on this system")
+        # a short code for the translated note: no_scapy, no_raw (rights), refused (the system said no mid-scan)
+        self.code = "" if caps.syn_fingerprint else ("no_raw" if caps.scapy else "no_scapy")
+        self.attempts = 0
+        self.answers = 0
+
+    @property
+    def available(self) -> bool:
+        return not self.reason
+
+    def _switch_off(self, why: str) -> None:
+        if not self.reason:
+            self.reason, self.code = why, "refused"
+            logger.info("TCP/IP fingerprinting switched off: %s", why)
+            if self.diagnostics is not None:
+                self.diagnostics.warn("syn_fingerprint_off", "TCP/IP fingerprinting is off: " + why)
+
+    def __call__(self, ip: str, port: int, timeout: float = 1.0):
+        """The SYN-ACK's traits as a dict, or None (unavailable, IPv6, no answer, not a SYN-ACK)."""
+        if self.reason or sr1 is None or ":" in ip:
             return None
-        return {"window": int(reply[TCP].window), "options": [o[0] for o in reply[TCP].options],
-                "df": bool(int(reply[IP].flags) & 2), "ttl": int(reply[IP].ttl)}
-    except Exception as exc:
-        logger.debug("SYN fingerprint failed: %s", exc)
-        return None
+        self.attempts += 1
+        try:
+            options = [("MSS", 1460), ("SAckOK", b""), ("Timestamp", (1, 0)), ("NOP", None), ("WScale", 7)]
+            reply = sr1(IP(dst=ip) / TCP(dport=port, flags="S", options=options), timeout=timeout, verbose=0)
+            if reply is None or not reply.haslayer(TCP) or (int(reply[TCP].flags) & 0x12) != 0x12:
+                return None
+            self.answers += 1
+            return {"window": int(reply[TCP].window), "options": [o[0] for o in reply[TCP].options],
+                    "df": bool(int(reply[IP].flags) & 2), "ttl": int(reply[IP].ttl)}
+        except Exception as exc:
+            if _refused(exc):
+                self._switch_off(f"{type(exc).__name__}: {exc}"[:200])
+            else:
+                logger.debug("SYN fingerprint of %s failed: %s", ip, exc)
+            return None
+
+
+def syn_fingerprint(ip: str, port: int, timeout: float = 1.0):
+    """One-off SYN fingerprint (kept for the 1.x API): the traits dict, or None when unavailable or unanswered."""
+    return SynProbe()(ip, port, timeout)
 
 
 # ---------------------------------------------------------------------------
