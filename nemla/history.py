@@ -11,6 +11,7 @@ import json
 import os
 import re
 import tempfile
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -23,6 +24,21 @@ _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 _LEGACY = r"\d{8}-\d{6}-[A-Za-z0-9._-]{1,80}"          # ids written by Nemla 1.x
 ID_RE = re.compile(rf"^(?:{_UUID}|{_LEGACY})$")
 _UUID_RE = re.compile(rf"^{_UUID}$")
+
+
+_clock = {"last": 0.0}
+_clock_lock = threading.Lock()
+
+
+def _stamp() -> float:
+    """The time a scan is saved, strictly later than the previous stamp of this process: on Windows with Python before
+    3.11 the clock ticks about every 15 ms, so two scans saved in a row shared one time and their order was lost."""
+    with _clock_lock:
+        now = time.time()
+        if now <= _clock["last"]:
+            now = _clock["last"] + 1e-6
+        _clock["last"] = now
+        return now
 
 
 def folder(data_dir) -> Path:
@@ -44,7 +60,7 @@ def save(data_dir, engine, meta: dict, hosts: list) -> str:
     scan_id = meta.get("scan_id")
     if not (isinstance(scan_id, str) and _UUID_RE.match(scan_id)) or (directory / f"{scan_id}.json").exists():
         scan_id = str(uuid.uuid4())   # the scan's own id when it has a fresh one, else a new one
-    stored = dict(meta, scan_id=scan_id, saved_at=time.time())
+    stored = dict(meta, scan_id=scan_id, saved_at=_stamp())
     fd, tmp = tempfile.mkstemp(prefix=".scan-", suffix=".tmp", dir=directory)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:

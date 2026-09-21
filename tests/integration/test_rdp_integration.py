@@ -63,7 +63,7 @@ def test_standard_rdp_security_is_reported_as_weak():
     info = detect(host, port)
     assert info["details"]["weak_security"] is True and info["details"]["nla"] == "not required"
     ids = {f["id"] for f in nemla.assess_host({"ip": host, "open_ports": [{**info, "port": port, "proto": "tcp", "state": "open"}]})}
-    assert {"rdp_weak_security", "rdp_no_nla"} <= ids
+    assert "rdp_weak_security" in ids and "rdp_no_nla" not in ids       # the stronger finding replaces the weaker one
 
 
 def test_tls_only_rdp_without_nla_is_reported_as_not_requiring_nla():

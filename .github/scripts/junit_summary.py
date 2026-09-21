@@ -11,6 +11,15 @@ import sys
 import xml.etree.ElementTree as ET
 
 
+def annotation(title: str, message: str) -> str:
+    """A GitHub Actions error annotation: failing tests show up in the run's check annotations, readable without the logs."""
+    def escape(text: str, prop: bool = False) -> str:
+        text = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        return text.replace(":", "%3A").replace(",", "%2C") if prop else text
+
+    return f"::error title={escape(title, True)}::{escape(message)}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("xml")
@@ -47,6 +56,13 @@ def main() -> int:
         with open(target, "a", encoding="utf-8") as handle:
             handle.write(text + "\n")
 
+    shown = 0
+    for case in root.iter("testcase"):
+        for bad in [*case.findall("failure"), *case.findall("error")]:
+            if shown < 10:                                     # GitHub shows at most ten annotations per step
+                text = " ".join((bad.get("message") or bad.text or "").split())[:400]
+                print(annotation(f"{case.get('classname', '')}.{case.get('name', '')}"[-140:], text))
+            shown += 1
     problems = []
     if ran < args.min_tests:
         problems.append(f"only {ran} tests executed, at least {args.min_tests} expected")

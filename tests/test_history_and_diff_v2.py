@@ -2,6 +2,7 @@
 import json
 import os
 import time
+import types
 import uuid
 
 import pytest
@@ -31,6 +32,17 @@ def host(ip="10.0.0.5", ports=(), os=None, **extra):
 # --------------------------------------------------------------------------
 # ids and storage
 # --------------------------------------------------------------------------
+
+def test_scans_saved_within_one_clock_tick_keep_their_order(tmp_path, monkeypatch):
+    """Windows with Python before 3.11 reads the clock in ~15 ms steps, so back-to-back saves shared one time and the
+    'previous scan' of the second was lost (found by the Windows 3.8 CI job)."""
+    monkeypatch.setattr(history, "time", types.SimpleNamespace(time=lambda: 1_700_000_000.0))
+    first, second, third = (history.save(tmp_path, nemla, META, [host()]) for _ in range(3))
+    assert [entry["id"] for entry in history.list_scans(tmp_path)] == [third, second, first]
+    assert history.previous_for(tmp_path, META["target"], third) == second
+    assert history.previous_for(tmp_path, META["target"], second) == first
+    assert history.previous_for(tmp_path, META["target"], first) is None
+
 
 def test_scan_ids_are_uuids_and_unique(tmp_path):
     ids = [history.save(tmp_path, nemla, META, [host()]) for _ in range(5)]

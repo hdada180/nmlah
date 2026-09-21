@@ -5,11 +5,13 @@ in the `privileged` CI job. Here everything is simulated, so it runs everywhere.
 """
 import errno
 import socket
+import types
 
 import pytest
 
 import nemla
 from nemla import engine, os_detection, privileges
+from nemla.discovery import arp
 from nemla.log import Diagnostics
 from nemla.os_detection import SynProbe
 
@@ -118,7 +120,8 @@ class FakeReply:
 @pytest.fixture()
 def fake_scapy(monkeypatch):
     """Scapy's sr1 replaced by a recorder; behaviour is set through `state`."""
-    state = {"calls": [], "reply": FakeReply(), "error": None}
+    state = {"calls": [], "reply": FakeReply(), "error": None, "refreshed": 0}
+    monkeypatch.setattr(os_detection, "refresh_scapy", lambda: state.update(refreshed=state["refreshed"] + 1))
 
     def sr1(packet, timeout=1.0, verbose=0):
         state["calls"].append(packet)
@@ -145,7 +148,48 @@ def test_a_probe_without_rights_never_touches_scapy(fake_scapy):
     probe = SynProbe(caps(raw=False), diagnostics)
     assert not probe.available and probe.code == "no_raw" and "refuses raw sockets" in probe.reason
     assert probe("10.0.0.5", 80) is None
-    assert fake_scapy["calls"] == []
+    assert fake_scapy["calls"] == [] and fake_scapy["refreshed"] == 0
+
+
+def test_a_probe_that_may_run_makes_scapy_re_read_its_routes_first(fake_scapy):
+    """Scapy reads interfaces and routes at import time; the privileged CI job builds its network afterwards."""
+    SynProbe(caps())
+    assert fake_scapy["refreshed"] == 1
+
+
+class FakeTable:
+    def __init__(self, calls, name, error=None):
+        self.calls, self.name, self.error = calls, name, error
+
+    def _do(self):
+        self.calls.append(self.name)
+        if self.error is not None:
+            raise self.error
+
+    reload = resync = _do
+
+
+def test_refreshing_scapy_reloads_interfaces_and_routes(monkeypatch):
+    calls = []
+    monkeypatch.setattr(arp, "HAVE_SCAPY", True)
+    monkeypatch.setattr(arp, "scapy_conf", types.SimpleNamespace(ifaces=FakeTable(calls, "ifaces"), route=FakeTable(calls, "route")),
+                        raising=False)
+    arp.refresh_scapy()
+    assert calls == ["ifaces", "route"]
+
+
+def test_a_refresh_that_fails_is_harmless_and_does_not_skip_the_other_step(monkeypatch):
+    calls = []
+    monkeypatch.setattr(arp, "HAVE_SCAPY", True)
+    monkeypatch.setattr(arp, "scapy_conf", types.SimpleNamespace(ifaces=FakeTable(calls, "ifaces", RuntimeError("no")),
+                                                                 route=FakeTable(calls, "route")), raising=False)
+    arp.refresh_scapy()
+    assert calls == ["ifaces", "route"]
+
+
+def test_refreshing_without_scapy_does_nothing(monkeypatch):
+    monkeypatch.setattr(arp, "HAVE_SCAPY", False)
+    arp.refresh_scapy()
 
 
 def test_a_probe_without_scapy_has_its_own_reason(fake_scapy):

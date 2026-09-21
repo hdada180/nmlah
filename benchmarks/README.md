@@ -34,9 +34,11 @@ under a second, no healthy host lost). Results are machine-specific and are not 
 ## What the benchmarks found (and what was done)
 
 * Compared with 1.2.0 on the same machine and target, **port scanning itself is not slower** (1,000 ports, banners off: 0.67 s vs 0.68 s).
-  A default 2.0 scan of 1,000 ports took 7.6 s against 0.68 s because service identification (new in 2.0) asks silent open ports a dozen
-  protocol questions, one timeout each: 12 probes = 6 s on one silent port. Identification now gives up on a port that ignored four
-  general-purpose probes (about 3 s), except at intensity 7+; the detectors that belong to the port always run first.
+  A default 2.0 scan of 1,000 ports took 7.6 s against 0.68 s because service identification (new in 2.0) asks open ports that stay
+  silent about a dozen protocol questions, one timeout each (about 6 s on one silent port). That is by design: RDP, SMB, Redis and
+  PostgreSQL say nothing until asked, so a silent port cannot be skipped. A shortcut that gave up after four silent probes was tried
+  and reverted: the xrdp integration test showed it made RDP and SMB undetectable on non-standard ports. Use `--intensity 1`,
+  `--no-banner` or a shorter `--timeout` when speed matters more; probing the questions concurrently would be the real fix.
 * A reply that merely starts with `S` or `N` (an `SSH-2.0-...` banner) was identified as PostgreSQL. PostgreSQL answers the SSL request
   with exactly one byte; the detector now requires that.
 * A host whose last step failed used to vanish from the report; it now keeps its open ports and a `host_incomplete` warning.

@@ -294,9 +294,9 @@ Measured on one Windows 11 machine (Python 3.13, loopback target, 1,500 threads;
 
 Memory stays flat as the port count grows (jobs are pulled lazily). Cancelling stops a scan in about 0.1 s, even while
 connections hang. Compared with 1.2.0 on the same machine, the port scanning itself is not slower (1,000 ports, banners off:
-0.67 s in 2.0, 0.68 s in 1.2.0); what 2.0 adds is service identification, which asks silent open ports several protocol questions
-and takes a timeout for each. That cost is bounded (a port that ignores four probes is given up on) and you choose it:
-`--intensity 1` or `--no-banner` for 1.x speed, higher intensity to try everything.
+0.67 s in 2.0, 0.68 s in 1.2.0); what 2.0 adds is service identification, which asks open ports that stay silent about a
+dozen protocol questions and waits a timeout for each (a default scan of those 1,000 ports took 7.6 s). That is the price of finding
+RDP, SMB or Redis on any port, and you choose it: `--intensity 1` or `--no-banner` for 1.x speed, `--timeout` to shorten each wait.
 
 ## Limitations
 

@@ -15,7 +15,6 @@ presented as confirmed. Adding a protocol means adding one detector module.
 from __future__ import annotations
 
 import socket
-import time
 
 from ..config import COMMON_SERVICE_NAMES, TLS_PORTS
 from ..log import logger
@@ -56,12 +55,6 @@ __all__ = [
 
 HTTP_TLS_PORTS = {443, 8443}   # these never greet first, so do not wait for a banner there
 INTENSITY_TLS_LEGACY = 4  # from this intensity on, TLS ports are also asked about TLS 1.0/1.1
-# A port that has sat through this many general-purpose probes without a single byte back (each one a full timeout) is
-# not going to answer the next ones either: identification stops there instead of waiting out every remaining detector.
-# Measured on a silent port at timeout 0.5 s: 12 probes = 6 s, now 4 = 2 s. The detectors that belong to the port
-# (Redis on 6379, ...) always run first and are never cut off; intensity 7 and up tries everything regardless.
-SILENT_PROBES_BEFORE_GIVING_UP = 4
-INTENSITY_TRY_EVERYTHING = 7
 
 
 def service_name(port: int) -> str:
@@ -124,18 +117,13 @@ def _active(probe: Probe, intensity: int, diagnostics, stage: str = "all"):
     candidates = _candidates(probe.port, intensity, probe.tls)
     early = [d for d in candidates if probe.port in d.ports or d.rarity <= 1]
     chosen = {"early": early, "late": [d for d in candidates if d not in early], "all": candidates}[stage]
-    limit = 10**6 if intensity >= INTENSITY_TRY_EVERYTHING else SILENT_PROBES_BEFORE_GIVING_UP
+    # Every candidate is tried, even on a port that has ignored the first few: RDP, SMB, Redis, PostgreSQL... say nothing
+    # until they are asked the right question, so a silent port looks exactly like the port of a service that is still to
+    # be tried. (Giving up after four silent probes was tried and broke RDP and SMB detection on non-standard ports.)
     for detector in chosen:
-        if probe.shared.get("silent", 0) >= limit and probe.port not in detector.ports:
-            logger.debug("%s:%s ignored %d probes, not trying the other %d detectors", probe.ip, probe.port,
-                         probe.shared["silent"], len(chosen) - chosen.index(detector))
-            break
-        began = time.monotonic()
         found = _run(detector, probe, diagnostics)
         if found is not None:
             return found
-        if time.monotonic() - began >= 0.9 * probe.timeout:       # it waited out the whole timeout: a silent port
-            probe.shared["silent"] = probe.shared.get("silent", 0) + 1
     return None
 
 

@@ -164,10 +164,26 @@ def neighbor_sweep(targets, settle: float = 2.5, cancel=None) -> dict:
     return {ip: mac for ip, mac in table.items() if in_scope(ip)}
 
 
+def refresh_scapy() -> None:
+    """Make Scapy re-read the routing table and the interface list.
+
+    Scapy reads both once, when it is imported. An interface that appeared since (a VPN, a container or lab network) is
+    unknown to it, and packets for that network leave through the default interface and are never answered. Found by the
+    privileged tests, which build their network after Scapy was loaded."""
+    if not HAVE_SCAPY:
+        return
+    for name, method in (("ifaces", "reload"), ("route", "resync")):
+        try:
+            getattr(getattr(scapy_conf, name), method)()
+        except Exception as exc:       # an older Scapy without the method, or a platform where reading routes fails
+            logger.debug("Scapy could not refresh %s: %s", name, exc)
+
+
 def scapy_arp_scan(ips: list, timeout: int = 2, cancel=None):
     """ARP discovery through scapy. Returns {ip: mac}, or None if it cannot run here."""
     if not HAVE_SCAPY:
         return None
+    refresh_scapy()
     found = {}
     options = {}
     try:      # Layer-2 packets leave through one interface: the one whose route reaches the targets, not just the default one

@@ -21,6 +21,7 @@ import errno
 from dataclasses import dataclass, field
 
 from . import privileges
+from .discovery.arp import refresh_scapy
 from .i18n import t
 from .log import logger
 
@@ -132,6 +133,8 @@ class SynProbe:
         self.code = "" if caps.syn_fingerprint else ("no_raw" if caps.scapy else "no_scapy")
         self.attempts = 0
         self.answers = 0
+        if not self.reason:
+            refresh_scapy()               # routes and interfaces that appeared after Scapy was imported
 
     @property
     def available(self) -> bool:

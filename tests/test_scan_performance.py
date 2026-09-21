@@ -4,7 +4,7 @@ The benchmarks in benchmarks/ produce the numbers; these tests keep the properti
 * one broken host (reset, stalled, crashing, silent) never stops or spoils the scan, and is still reported,
 * 10, 50 and 100 hosts are scanned side by side (the time does not grow with the host count),
 * the scheduler never runs more than its limits and counts what it did,
-* a port that never answers costs a bounded number of probes,
+* a service that only speaks when asked (RDP, SMB...) is found on any port, however silent it is to generic probes,
 * a service is never mistaken for PostgreSQL just because its reply starts with S or N,
 * cancelling stops a scan within a fraction of a second, even while connections hang.
 """
@@ -16,7 +16,7 @@ import nemla
 from benchmarks import bench_network, bench_scan
 from benchmarks.targets import LocalTarget
 from nemla import engine
-from nemla.fingerprint import SILENT_PROBES_BEFORE_GIVING_UP, detect_service
+from nemla.fingerprint import detect_service
 
 # ----------------------------------------------------------------------------------------------- scheduler counters
 
@@ -94,50 +94,42 @@ def test_the_partial_record_of_a_failed_host_is_a_valid_report_row(monkeypatch, 
 
 # ----------------------------------------------------------------------------------------------- silent ports and lookalikes
 
-def connections_used(intensity, timeout=0.15):
-    with LocalTarget() as target:
-        port = target.listen("127.0.0.1", 0, "silent")
-        started = time.monotonic()
-        info = detect_service("127.0.0.1", port, b"", "", timeout, None, None, intensity, None)
-        return target.accepted, time.monotonic() - started, info
+RDP_CONFIRM = bytes([3, 0, 0, 19, 14, 0xD0, 0, 0, 0, 0, 0, 2, 0, 8, 0, 0, 0, 0, 0])      # X.224 confirm, standard RDP security
 
 
-def test_a_port_that_never_answers_costs_a_bounded_number_of_probes():
-    """Twelve probes of a full timeout each used to be tried on a silent port (6 s at 0.5 s): now a handful."""
-    normal, normal_time, info = connections_used(intensity=5)
-    everything, everything_time, _ = connections_used(intensity=9)
-    assert info == {}                                                          # nothing to learn from a silent port
-    assert normal <= SILENT_PROBES_BEFORE_GIVING_UP + 3                        # the silent probes, the TLS attempt, the port's own
-    assert everything > normal and everything_time > normal_time               # intensity 7+ still tries every detector
+def quiet_until_asked(tcp_server, request_test, reply):
+    """A server that stays silent (and keeps the connection open) unless the client's first bytes pass `request_test`:
+    RDP, SMB, Redis and PostgreSQL behave like this, which makes them look exactly like a dead port to a generic probe."""
+    def handler(conn):
+        try:
+            conn.settimeout(2.5)
+            first = conn.recv(64)
+            if first and request_test(first):
+                conn.sendall(reply)
+            else:
+                while conn.recv(64):
+                    pass
+        except OSError:
+            pass
+        finally:
+            conn.close()
+
+    return tcp_server(handler)
 
 
-def test_giving_up_never_skips_the_detectors_that_belong_to_the_port(monkeypatch):
-    from nemla import fingerprint
-    from nemla.fingerprint.base import Detector, Probe
+def test_a_protocol_that_only_speaks_when_asked_is_found_on_any_port(tcp_server):
+    """The regression the xrdp integration test caught: identification must reach the RDP question on a non-standard port
+    even though every earlier probe was met with silence (nothing at all is sent back to a wrong question)."""
+    port = quiet_until_asked(tcp_server, lambda data: data[0] == 3 and len(data) > 10 and data[5] == 0xE0, RDP_CONFIRM)
+    info = detect_service("127.0.0.1", port, b"", "", 0.3, None, None, 5, None)
+    assert info.get("detected") == "rdp" and info["details"]["weak_security"] is True
 
-    tried = []
 
-    class Slow(Detector):                       # a general detector that always sits out the full timeout
-        def __init__(self, name):
-            self.name, self.rarity, self.ports = name, 1, ()
-
-        def probe(self, probe):
-            tried.append(self.name)
-            time.sleep(probe.timeout)
-
-    class Own(Detector):
-        name, rarity, ports = "own", 9, (4242,)
-
-        def probe(self, probe):
-            tried.append(self.name)
-
-    monkeypatch.setattr(fingerprint, "REGISTRY", [Slow(f"g{i}") for i in range(10)] + [Own()])
-    fingerprint._active(Probe("127.0.0.1", 4242, timeout=0.05), intensity=5, diagnostics=None, stage="all")
-    assert tried[0] == "own"                                                   # the port's own detector goes first
-    assert len(tried) == 1 + SILENT_PROBES_BEFORE_GIVING_UP                    # then the general ones, until it gives up
-    tried.clear()
-    fingerprint._active(Probe("127.0.0.1", 4243, timeout=0.05), intensity=9, diagnostics=None, stage="all")
-    assert [n for n in tried if n != "own"] == [f"g{i}" for i in range(10)]     # on another port, at intensity 9: all of them
+def test_a_port_that_never_answers_is_reported_as_unknown_after_every_probe_was_tried(tcp_server):
+    port = quiet_until_asked(tcp_server, lambda data: False, b"")
+    started = time.monotonic()
+    info = detect_service("127.0.0.1", port, b"", "", 0.15, None, None, 5, None)
+    assert info == {} and time.monotonic() - started < 6                                   # about ten probes of 0.15 s
 
 
 def serve_reply(tcp_server, reply):
