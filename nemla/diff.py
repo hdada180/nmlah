@@ -8,6 +8,7 @@ older versions (no `proto`, no structured OS) compare fine.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from .findings import finding_text
 from .i18n import STRINGS, t
@@ -67,8 +68,8 @@ def diff_scans(old_hosts: list, new_hosts: list) -> dict:
     """Compare two scans of the same target."""
     old = {h["ip"]: h for h in old_hosts}
     new = {h["ip"]: h for h in new_hosts}
-    out = {"new_hosts": sorted(new.keys() - old.keys(), key=ip_sort_key),
-           "gone_hosts": sorted(old.keys() - new.keys(), key=ip_sort_key), "hosts": {}}
+    out: dict[str, Any] = {"new_hosts": sorted(new.keys() - old.keys(), key=ip_sort_key),
+                           "gone_hosts": sorted(old.keys() - new.keys(), key=ip_sort_key), "hosts": {}}
     new_findings = sum(len(_finding_keys(new[ip])) for ip in out["new_hosts"])
     opened = closed = changed = resolved = os_changes = 0
     order = lambda key: (key[1] or 0, key[0])  # noqa: E731
@@ -76,7 +77,7 @@ def diff_scans(old_hosts: list, new_hosts: list) -> dict:
         o, n = old[ip], new[ip]
         op = {_key(p): p for p in o.get("open_ports", []) if p.get("state", "open") == "open"}
         np_ = {_key(p): p for p in n.get("open_ports", []) if p.get("state", "open") == "open"}
-        entry = {
+        entry: dict[str, Any] = {
             "opened": [_label(k) for k in sorted(np_.keys() - op.keys())],
             "closed": [_label(k) for k in sorted(op.keys() - np_.keys())],
             "changed": _service_changes(op, np_),

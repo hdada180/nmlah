@@ -113,7 +113,7 @@ def _entries(data_dir) -> list:
 def list_scans(data_dir, limit: int = 30) -> list:
     """Summaries of the newest saved scans, newest first."""
     out = []
-    for saved, scan_id, data in _entries(data_dir)[:limit]:
+    for _saved, scan_id, data in _entries(data_dir)[:limit]:
         out.append({
             "id": scan_id, "target": data.get("target", ""), "scan_time": data.get("scan_time", ""),
             "hosts": len(data["hosts"]),

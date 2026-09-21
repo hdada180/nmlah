@@ -54,7 +54,7 @@ def test_65535_ports_on_several_hosts_stay_within_the_limits(monkeypatch):
 def test_hosts_are_scanned_side_by_side_and_finish_as_soon_as_they_are_done(tcp_server):
     ports = [tcp_server(lambda c: c.close()) for _ in range(3)]
     events = []
-    hosts, _ = nemla.run_scan("test", ["127.0.0.1", "127.0.0.2"], ports, no_ping=True, no_os=True, no_banner=True,
+    _hosts, _ = nemla.run_scan("test", ["127.0.0.1", "127.0.0.2"], ports, no_ping=True, no_os=True, no_banner=True,
                               emit=events.append)
     kinds = [e["type"] for e in events]
     assert kinds.count("host_start") == 2 and kinds.count("host_done") == 2
@@ -150,7 +150,7 @@ def test_exit_codes_for_findings_and_failures(tcp_server, tmp_path):
     telnet = tcp_server(lambda c: (c.sendall(b"\xff\xfb\x01login: "), time.sleep(0.3), c.close()))
     args = ["-t", "127.0.0.1", "-p", str(telnet), "--no-ping", "--no-os", "-o", str(tmp_path / "r.html")]
     assert nemla.main(args) == 0
-    assert nemla.main(args + ["--fail-on", "high"]) == 3
+    assert nemla.main([*args, "--fail-on", "high"]) == 3
     assert nemla.main(["-t", "10.0.0.0/8", "--max-hosts", "10", "-o", str(tmp_path / "x.html")]) == 1
     assert nemla.main(["-t", "127.0.0.1", "-p", "99999", "-o", str(tmp_path / "x.html")]) == 1
 

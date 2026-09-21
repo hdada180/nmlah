@@ -24,10 +24,34 @@ from .base import CONFIDENCE, REGISTRY, BudgetExhausted, Detection, Detector, Pr
 from .rules import OLD_TLS, banner_os_hint, one_line, parse_banner
 from .tls import inspect_tls
 
-__all__ = ["CONFIDENCE", "REGISTRY", "OLD_TLS", "BudgetExhausted", "Detection", "Detector", "Probe", "register",
-           "banner_os_hint", "one_line", "parse_banner", "detect_service", "detection_fields", "identify",
-           "port_guess", "service_name", "databases", "dns", "ftp", "http", "mail", "misc", "rdp", "smb",
-           "smtp", "ssh"]
+__all__ = [
+    "CONFIDENCE",
+    "OLD_TLS",
+    "REGISTRY",
+    "BudgetExhausted",
+    "Detection",
+    "Detector",
+    "Probe",
+    "banner_os_hint",
+    "databases",
+    "detect_service",
+    "detection_fields",
+    "dns",
+    "ftp",
+    "http",
+    "identify",
+    "mail",
+    "misc",
+    "one_line",
+    "parse_banner",
+    "port_guess",
+    "rdp",
+    "register",
+    "service_name",
+    "smb",
+    "smtp",
+    "ssh",
+]
 
 HTTP_TLS_PORTS = {443, 8443}   # these never greet first, so do not wait for a banner there
 INTENSITY_TLS_LEGACY = 4  # from this intensity on, TLS ports are also asked about TLS 1.0/1.1
@@ -61,7 +85,7 @@ def _run(detector: Detector, probe: Probe, diagnostics):
         return detector.probe(probe)
     except (Cancelled, BudgetExhausted):
         raise
-    except Exception as exc:  # noqa: BLE001 - a detector bug or a hostile reply must not end the scan
+    except Exception as exc:
         logger.debug("detector %s failed on %s:%s", detector.name, probe.ip, probe.port, exc_info=True)
         if diagnostics is not None:
             diagnostics.warn("detector_error", f"{detector.name}: {type(exc).__name__}")
@@ -79,7 +103,7 @@ def _passive(probe: Probe, intensity: int, diagnostics):
                 return detector.refine(probe, found) if intensity >= 2 else found
         except (Cancelled, BudgetExhausted):
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug("detector %s failed on a banner", detector.name, exc_info=True)
             if diagnostics is not None:
                 diagnostics.warn("detector_error", f"{detector.name}: {type(exc).__name__}")

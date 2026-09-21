@@ -24,7 +24,7 @@ dependencies = []
 
 [project.optional-dependencies]
 arp = ["scapy>=2.5"]
-dev = ["pytest", "pyflakes"]
+dev = ["pytest", "pyflakes", "ruff", "mypy"]
 
 [project.scripts]
 nemla = "nemla.main:main"
@@ -42,3 +42,41 @@ nemla_ui = ["web/*.*", "web/brand/*"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "integration: needs a real Samba/xrdp server (run by the `integration` CI job; skipped unless NEMLA_INTEGRATION=1)",
+    "privileged: needs root and Scapy (run by the `privileged` CI job; skipped otherwise)",
+    "browser: needs Chrome or Chromium (skipped when none is installed)",
+]
+
+[tool.ruff]
+line-length = 130
+target-version = "py38"
+extend-exclude = ["docs", "benchmarks/results"]
+
+[tool.ruff.lint]
+# E/F/W pycodestyle+pyflakes, B bugbear, UP pyupgrade (py38 target), C4 comprehensions, PIE, S security,
+# PLE/PLW pylint errors and warnings, RUF ruff-specific. SIM is style only and left out on purpose.
+select = ["E", "F", "W", "B", "UP", "C4", "PIE", "S", "PLE", "PLW", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Translation tables: long human-readable lines, and Hebrew/Arabic letters that look like Latin ones.
+"nemla/_strings_base.py" = ["E501", "RUF001"]
+"nemla/strings_extra.py" = ["E501", "RUF001"]
+# Tests: assert is the point, servers bind loopback on purpose, hostile strings are test data, and long lines
+# mirror wire data and expected reports (E501 stays on for the package itself).
+"tests/*" = ["E501", "S101", "S104", "S105", "S106", "S108", "S110", "S301", "S310", "S324", "S603", "S607", "PLW1510", "RUF001", "RUF002", "RUF003"]
+"benchmarks/*" = ["S101", "S104", "S603", "S607", "PLW0603"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["nemla", "nemla_ui"]
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+# Scapy is optional and ships no type information.
+module = ["scapy", "scapy.*"]
+ignore_missing_imports = true

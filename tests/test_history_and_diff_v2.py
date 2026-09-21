@@ -1,7 +1,6 @@
 """History with UUID ids, path safety, and the richer scan comparison."""
 import json
 import os
-import re
 import time
 import uuid
 
@@ -123,7 +122,7 @@ def test_saved_scan_round_trips_and_re_renders_in_other_languages(tmp_path):
     scan_id = history.save(tmp_path, nemla, dict(META, findings=nemla.summarize_findings([h])), [h])
     data = history.load(tmp_path, scan_id)
     assert data["hosts"][0]["findings"][0]["id"] == "telnet" and data["saved_at"] > 0
-    body, ctype, ext = nemla.reports.report_bytes("html", history.meta_of(data), data["hosts"], "he")
+    body, _ctype, _ext = nemla.reports.report_bytes("html", history.meta_of(data), data["hosts"], "he")
     assert 'dir="rtl"' in body.decode("utf-8") and "טקסט גלוי" in body.decode("utf-8")
 
 

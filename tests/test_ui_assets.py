@@ -136,7 +136,7 @@ def test_strings_endpoint_carries_every_finding_text_in_every_language(ui):
 
 
 def test_strings_endpoint_needs_the_token(ui):
-    app, port = ui
+    _app, port = ui
     assert get(port, "/api/strings", "wrong")[0] == 401
 
 

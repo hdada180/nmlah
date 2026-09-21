@@ -2,20 +2,105 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feature/**"]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.8", "3.10", "3.12"]
+  # ------------------------------------------------------------------ static checks
+  lint:
+    name: lint (ruff, pyflakes)
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-      - run: python -m pip install --upgrade pip pytest pyflakes
-      - run: python -m pyflakes nemla nemla_ui nemla.py
-      - run: python -m pytest -q
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip "ruff~=0.16.8" pyflakes
+      - run: python -m ruff check .
+      - run: python -m pyflakes nemla nemla_ui nemla.py tests
+
+  typecheck:
+    name: typecheck (mypy)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip "mypy~=2.3.1"
+      # the code base is checked against Python 3.10 typing rules (pyproject: [tool.mypy] python_version);
+      # 3.8 and 3.9 are covered by the test matrix below, which really imports and runs every module
+      - run: python -m mypy
+
+  # ------------------------------------------------------------------ the whole suite on real Linux
+  linux:
+    name: linux (python ${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          allow-prereleases: true
+      - name: Environment
+        run: |
+          python -VV
+          uname -srm
+          echo "open files limit: $(ulimit -n)"
+          python - <<'EOF'
+          import socket
+          try:
+              sock = socket.socket(socket.AF_INET6)
+              sock.bind(("::1", 0))
+              print("ipv6 loopback: available")
+          except OSError as exc:
+              print("ipv6 loopback: NOT available:", exc)
+          EOF
+      - run: python -m pip install --upgrade pip pytest
+      - name: Tests
+        run: python -m pytest -ra -q -p no:cacheprovider --junitxml=junit.xml
+      - name: Summary
+        if: always()
+        run: python .github/scripts/junit_summary.py junit.xml "Linux / Python ${{ matrix.python }}" --min-tests 700
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-linux-${{ matrix.python }}
+          path: junit.xml
+
+  # ------------------------------------------------------------------ and on Windows, where it is used most
+  windows:
+    name: windows (python ${{ matrix.python }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.8", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install --upgrade pip pytest
+      - name: Tests
+        run: python -m pytest -ra -q -p no:cacheprovider --junitxml=junit.xml
+      - name: Summary
+        if: always()
+        run: python .github/scripts/junit_summary.py junit.xml "Windows / Python ${{ matrix.python }}" --min-tests 700
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-windows-${{ matrix.python }}
+          path: junit.xml

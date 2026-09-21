@@ -26,8 +26,8 @@ import threading
 import time
 from pathlib import Path
 
-from .discovery.arp import neighbor_sweep, nudge_arp, parse_arp_table, read_arp_table  # noqa: F401  (re-exported)
-from .discovery.mac import mac_is_local, normalize_mac  # noqa: F401  (re-exported)
+from .discovery.arp import neighbor_sweep, nudge_arp, parse_arp_table, read_arp_table
+from .discovery.mac import mac_is_local, normalize_mac
 from .log import logger
 
 _REEXPORTED = (nudge_arp, parse_arp_table, read_arp_table)  # kept importable from here for older code
@@ -69,7 +69,7 @@ class AlertLog:
     def __init__(self, path=None, limit: int = MAX_ALERTS):
         self.path = Path(path) if path else None
         self.limit = limit
-        self.alerts = []
+        self.alerts: list = []
         self.cond = threading.Condition()
         self._seq = 0
 
@@ -115,13 +115,13 @@ class AlertLog:
 class Tripwire:
     """Listens on decoy ports and reports every connection to `on_hit`."""
 
-    def __init__(self, ports, on_hit, host: str = "0.0.0.0", max_clients: int = 64):
+    def __init__(self, ports, on_hit, host: str = "0.0.0.0", max_clients: int = 64):  # noqa: S104 - a decoy must listen on the LAN
         self.ports = list(ports)
         self.on_hit = on_hit
         self.host = host
         self._slots = threading.BoundedSemaphore(max_clients)
         self._stop = threading.Event()
-        self._socks = []
+        self._socks: list = []
 
     def start(self):
         """Bind the decoys. Returns (listening ports, {port: reason} for those that failed)."""
@@ -189,7 +189,7 @@ class Tripwire:
             self._slots.release()
         try:
             self.on_hit(addr[0], addr[1], port, data)
-        except Exception:  # noqa: BLE001 - a bad handler must not kill the decoy
+        except Exception:
             logger.warning("tripwire handler failed for %s", addr[0], exc_info=True)
 
 
@@ -214,13 +214,14 @@ def default_gateway():
                 if len(fields) > 2 and fields[1] == "00000000" and int(fields[3], 16) & 2:
                     return socket.inet_ntoa(struct.pack("<L", int(fields[2], 16)))
         elif sys.platform == "win32":
-            out = subprocess.run(["route", "print", "-4", "0.0.0.0"], capture_output=True,
-                                 text=True, timeout=5).stdout
+            # the system routing tool with fixed arguments, no shell ("0.0.0.0" is the default-route destination)
+            out = subprocess.run(["route", "print", "-4", "0.0.0.0"], capture_output=True,  # noqa: S607, S104
+                                 text=True, timeout=5, check=False).stdout
             m = re.search(r"^\s*0\.0\.0\.0\s+0\.0\.0\.0\s+(\d+\.\d+\.\d+\.\d+)", out, re.M)
             return m.group(1) if m else None
         else:
-            out = subprocess.run(["route", "-n", "get", "default"], capture_output=True,
-                                 text=True, timeout=5).stdout
+            out = subprocess.run(["route", "-n", "get", "default"], capture_output=True,  # noqa: S607
+                                 text=True, timeout=5, check=False).stdout
             m = re.search(r"gateway:\s*(\d+\.\d+\.\d+\.\d+)", out)
             return m.group(1) if m else None
     except (OSError, ValueError, subprocess.SubprocessError):
@@ -364,7 +365,7 @@ def evaluate_sweep(table: dict, state: dict, gateway=None, now=None, vendor_look
                 evidence.append("locally administered address (virtual machine, container or random Wi-Fi address)")
             alerts.append({"kind": "new_device", "severity": "medium", "src_ip": ip, "mac": mac,
                            "confidence": 0.9, "evidence": evidence, "detail": {"local": mac_is_local(mac)}})
-    by_mac = {}
+    by_mac: dict = {}
     for ip, mac in table.items():
         by_mac.setdefault(mac, []).append(ip)
     for mac, ips in by_mac.items():
@@ -423,7 +424,7 @@ def block_commands(ip: str, gateway=None, own=(), platform=None) -> dict:
 class Guard:
     """Runs the tripwires and the periodic sweep, and raises alerts on `log`."""
 
-    def __init__(self, log: AlertLog, ports=DEFAULT_DECOYS, host: str = "0.0.0.0",
+    def __init__(self, log: AlertLog, ports=DEFAULT_DECOYS, host: str = "0.0.0.0",  # noqa: S104 - decoys listen on the LAN
                  network=None, interval: float = 60.0, state_path=None, sweep=None,
                  trusted_ips=(), ignore_local: bool = True, gateway=None, vendor_lookup=None):
         self.log = log
@@ -441,12 +442,13 @@ class Guard:
         self.state = load_state(state_path) if state_path else new_state()
         self.running = False
         self.errors = 0
-        self.listening, self.failed = [], {}
-        self._hits = {}
+        self.listening: list = []
+        self.failed: dict = {}
+        self._hits: dict = {}
         self._lock = threading.Lock()
         self._stop = threading.Event()
-        self._tripwire = None
-        self._thread = None
+        self._tripwire: Tripwire | None = None
+        self._thread: threading.Thread | None = None
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -519,7 +521,7 @@ class Guard:
         while not self._stop.is_set():
             try:
                 self.sweep_once()
-            except Exception:  # noqa: BLE001 - keep watching whatever happens
+            except Exception:
                 self.errors += 1
                 logger.warning("guard sweep failed", exc_info=True)
             self._stop.wait(self.interval)

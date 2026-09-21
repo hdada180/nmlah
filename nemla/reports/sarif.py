@@ -20,7 +20,8 @@ def _uri(host: str, port, proto: str) -> str:
 def sarif_text(meta: dict, hosts: list, lang=None) -> str:
     """The findings of a scan as a SARIF 2.1.0 log (one run, one result per finding)."""
     shown = hosts_for_report(hosts, lang_of(lang))
-    rules, results = {}, []
+    rules: dict = {}
+    results: list = []
     for host in shown:
         for f in host["findings"]:
             rules.setdefault(f["id"], {

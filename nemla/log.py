@@ -30,7 +30,7 @@ def log(msg: str) -> None:
 
 
 def set_sink(sink) -> None:
-    global _LOG_SINK
+    global _LOG_SINK  # noqa: PLW0603 - one process-wide sink (the web UI's ring buffer), swapped by the launcher
     _LOG_SINK = sink
 
 
@@ -58,7 +58,7 @@ class Diagnostics:
 
     def __init__(self, limit: int = 50):
         self._lock = threading.Lock()
-        self._items = {}
+        self._items: dict = {}
         self._limit = limit
 
     def warn(self, code: str, message: str = "", **detail) -> None:

@@ -34,7 +34,7 @@ def learned(table):
 
 def test_arp_change_alert_carries_confidence_and_evidence():
     state = learned({GW: M_GW, A: M_A})
-    alert = [a for a in guard.evaluate_sweep({GW: M_GW, A: M_X}, state, GW) if a["kind"] == "arp_change"][0]
+    alert = next(a for a in guard.evaluate_sweep({GW: M_GW, A: M_X}, state, GW) if a["kind"] == "arp_change")
     assert 0 < alert["confidence"] < 0.5 and alert["evidence"]
     assert any(M_A in line and M_X in line for line in alert["evidence"])
     assert any("locally administered" in line for line in alert["evidence"])
@@ -42,9 +42,9 @@ def test_arp_change_alert_carries_confidence_and_evidence():
 
 def test_a_gateway_change_is_more_suspicious_but_never_certain():
     state = learned({GW: M_GW, A: M_A})
-    gateway = [a for a in guard.evaluate_sweep({GW: M_X, A: M_A}, state, GW) if a["kind"] == "arp_change"][0]
+    gateway = next(a for a in guard.evaluate_sweep({GW: M_X, A: M_A}, state, GW) if a["kind"] == "arp_change")
     state = learned({GW: M_GW, A: M_A})
-    other = [a for a in guard.evaluate_sweep({GW: M_GW, A: M_X}, state, GW) if a["kind"] == "arp_change"][0]
+    other = next(a for a in guard.evaluate_sweep({GW: M_GW, A: M_X}, state, GW) if a["kind"] == "arp_change")
     assert gateway["confidence"] > other["confidence"] and gateway["severity"] == "high" and gateway["confidence"] < 0.86
     assert any("default gateway" in line for line in gateway["evidence"])
 
@@ -70,7 +70,7 @@ def test_a_known_device_moving_to_a_new_address_lowers_the_suspicion():
 
 def test_old_mac_still_answering_elsewhere_is_reported_as_evidence():
     state = learned({A: M_A})
-    confidence, evidence = guard.arp_change_assessment(A, M_A, M_X, {A: M_X, B: M_A}, state, False)
+    _confidence, evidence = guard.arp_change_assessment(A, M_A, M_X, {A: M_X, B: M_A}, state, False)
     assert any("still answers for another address" in line for line in evidence)
 
 
@@ -199,10 +199,14 @@ def test_the_fallback_can_be_switched_off(lan, tcp_server, monkeypatch):
 
 
 def test_empty_arp_falls_back_to_probing_everything(lan, tcp_server, monkeypatch):
-    port = tcp_server(lambda c: c.close(), host="127.0.0.2")
+    """Every address is probed when ARP found nothing. (On Linux all of 127/8 is local, so a refused
+    connection on an address with no listener also proves 'alive': both hosts here have a listener.)"""
+    first = tcp_server(lambda c: c.close(), host="127.0.0.2")
+    second = tcp_server(lambda c: c.close(), host="127.0.0.3")
     monkeypatch.setattr(discovery, "neighbor_sweep", lambda targets, cancel=None: {})
-    found = discovery.discover_hosts(["127.0.0.2", "127.0.0.3"], probe_ports=(port,), timeout=0.5)
-    assert list(found) == ["127.0.0.2"]
+    found = discovery.discover_hosts(["127.0.0.2", "127.0.0.3"], probe_ports=(first, second), timeout=1.0)
+    assert sorted(found) == ["127.0.0.2", "127.0.0.3"]
+    assert all(info["method"] == "ICMP/TCP" for info in found.values())
 
 
 def test_macs_of_probed_hosts_are_read_from_the_neighbour_cache(lan, tcp_server, monkeypatch):
@@ -249,7 +253,7 @@ def test_discovery_stops_when_cancelled(lan, monkeypatch):
 # --------------------------------------------------------------------------
 
 def python_files():
-    return [p for p in list(ROOT.rglob("*.py")) + list((REPO / "nemla_ui").glob("*.py")) + [REPO / "nemla.py"]]
+    return [*ROOT.rglob("*.py"), *(REPO / "nemla_ui").glob("*.py"), REPO / "nemla.py"]
 
 
 def test_no_dangerous_calls_anywhere_in_the_code():
@@ -357,7 +361,7 @@ HOSTILE = ["/opt/my app/nemla.py", "/tmp/$(touch pwned).py", "/tmp/`touch pwned`
 @pytest.mark.parametrize("script", HOSTILE)
 def test_desktop_entry_exec_line_is_one_safe_command(script):
     entry = launcher.desktop_entry(["/usr/bin/python3", script, "--ui"])
-    line = [l for l in entry.splitlines() if l.startswith("Exec=")]
+    line = [ln for ln in entry.splitlines() if ln.startswith("Exec=")]
     assert len(line) == 1 and "\n" not in line[0]
     exec_line = line[0][5:]
     assert "%f" not in exec_line.replace("%%f", "") and "%u" not in exec_line.replace("%%u", "")

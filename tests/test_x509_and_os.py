@@ -28,7 +28,8 @@ def der(tag, content):
 def oid(text):
     parts = [int(p) for p in text.split(".")]
     out = bytes([parts[0] * 40 + parts[1]])
-    for value in parts[2:]:
+    for part in parts[2:]:
+        value = part
         chunk = [value & 0x7F]
         value >>= 7
         while value:
@@ -57,7 +58,7 @@ def build_cert(cn="host.test", issuer=None, not_before=None, not_after=None, sig
     na = now + 86400 * 90 if not_after is None else not_after
     stamp = general if general_time else utc
     if key == RSA_KEY:
-        modulus = b"\x00" + bytes([0x80 | random.randrange(128)]) + os.urandom(bits // 8 - 1)
+        modulus = b"\x00" + bytes([0x80 | random.randrange(128)]) + os.urandom(bits // 8 - 1)  # noqa: S311 - test data
         public = der(0x30, der(0x02, modulus) + der(0x02, b"\x01\x00\x01"))
         spki = der(0x30, der(0x30, oid(RSA_KEY) + der(0x05, b"")) + der(0x03, b"\x00" + public))
     else:
@@ -132,7 +133,7 @@ def test_malformed_certificates_raise_only_x509_error(data):
 
 def test_truncation_and_bit_flips_never_crash_the_parser():
     good = build_cert("fuzz.test", san=["fuzz.test"])
-    rng = random.Random(1234)
+    rng = random.Random(1234)  # noqa: S311 - a seeded fuzzer, not a secret
     for cut in range(0, len(good), 3):
         try:
             parse_certificate(good[:cut])
@@ -155,8 +156,8 @@ def test_oversized_certificate_is_refused():
 
 
 def test_hostile_names_are_cleaned_in_the_facts():
-    facts = tlsmod.certificate_facts(build_cert("evil\x1b[31m.test‮"))
-    assert "\x1b" not in facts["subject"] and "‮" not in facts["subject"]
+    facts = tlsmod.certificate_facts(build_cert("evil\x1b[31m.test\u202e"))
+    assert "\x1b" not in facts["subject"] and "\u202e" not in facts["subject"]
 
 
 # --------------------------------------------------------------------------

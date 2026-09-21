@@ -288,10 +288,10 @@ def run_diff(args) -> int:
 
 
 def scan_options(args, udp_ports) -> dict:
-    return dict(no_ping=args.no_ping, no_os=args.no_os, no_banner=args.no_banner, threads=args.threads,
-                timeout=args.timeout, per_host=args.per_host, rate=args.rate, max_probes=args.max_probes,
-                intensity=args.intensity, udp_ports=udp_ports, udp_timeout=args.udp_timeout,
-                udp_rate=args.udp_rate)
+    return {"no_ping": args.no_ping, "no_os": args.no_os, "no_banner": args.no_banner, "threads": args.threads,
+            "timeout": args.timeout, "per_host": args.per_host, "rate": args.rate, "max_probes": args.max_probes,
+            "intensity": args.intensity, "udp_ports": udp_ports, "udp_timeout": args.udp_timeout,
+            "udp_rate": args.udp_rate}
 
 
 def data_dir():
@@ -447,10 +447,12 @@ def main(argv=None) -> int:
     if args.verbose:
         enable_debug()
     for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
-        except (AttributeError, ValueError):
-            pass
+        reconfigure = getattr(stream, "reconfigure", None)   # TextIOWrapper has it, a redirected stream may not
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
 
     if args.install_launcher or args.uninstall_launcher:
         return manage_launcher(args)

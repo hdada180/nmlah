@@ -91,12 +91,12 @@ class Job:
         self.id = job_id
         self.target = target
         self.lang = lang
-        self.events = []
+        self.events: list = []
         self.cond = threading.Condition()
         self.cancel = threading.Event()
         self.closed = False
-        self.hosts = None
-        self.meta = None
+        self.hosts: list | None = None
+        self.meta: dict | None = None
 
     def emit(self, event: dict) -> None:
         with self.cond:
@@ -160,7 +160,7 @@ class App:
         self.data_dir = Path(data_dir) if data_dir else guard_mod.data_dir()
         self.alerts = guard_mod.AlertLog(self.data_dir / "guard-alerts.jsonl")
         self.guard = None
-        self.guard_host = "0.0.0.0"
+        self.guard_host = "0.0.0.0"  # noqa: S104 - decoy ports listen on the LAN on purpose (the web UI itself binds loopback)
         self.lock = threading.Lock()
         self._counter_lock = threading.Lock()
         self.last_seen = time.monotonic()
@@ -193,7 +193,8 @@ class App:
     def parse_scan(self, body: dict) -> tuple:
         """Validate a scan request. Returns (target, lang, ips, ports, options)."""
         engine = self.engine
-        lang = body.get("lang") if body.get("lang") in engine.STRINGS else "en"
+        wanted = body.get("lang")
+        lang = wanted if isinstance(wanted, str) and wanted in engine.STRINGS else "en"
         ui = STRINGS.get(lang, STRINGS["en"])
         if body.get("authorized") is not True:
             raise ScanRequestError(ui["consent"], 403)
@@ -245,7 +246,8 @@ class App:
         return target, lang, ips, ports, options
 
     def start_scan(self, body: dict) -> Job:
-        lang = body.get("lang") if body.get("lang") in self.engine.STRINGS else "en"
+        wanted = body.get("lang")
+        lang = wanted if isinstance(wanted, str) and wanted in self.engine.STRINGS else "en"
         ui = STRINGS.get(lang, STRINGS["en"])
         if self.running():
             raise ScanRequestError(ui["busy"], 409)
@@ -273,7 +275,7 @@ class App:
             if not meta["cancelled"] and meta["discovered"]:
                 self._remember(job, done)
             job.emit(done)
-        except Exception as exc:  # noqa: BLE001 - report anything to the page, keep the server alive
+        except Exception as exc:
             logger.debug("scan failed", exc_info=True)
             job.emit({"type": "error", "msg": f"{type(exc).__name__}: {exc}"})
         finally:
@@ -282,6 +284,8 @@ class App:
 
     def _remember(self, job: Job, done: dict) -> None:
         """Save a finished scan and, if this target was scanned before, say what changed."""
+        if job.meta is None or job.hosts is None:
+            return
         try:
             done["scan_id"] = history_mod.save(self.data_dir, self.engine, job.meta, job.hosts)
             before = history_mod.previous_for(self.data_dir, job.target, done["scan_id"])
@@ -314,7 +318,7 @@ class App:
             except (TypeError, ValueError):
                 raise ScanRequestError("Decoy ports must be numbers between 1 and 65535 (at most 16).") from None
             interval = 0.0 if interval <= 0 else min(3600.0, max(10.0, interval))
-            ip, network = local_network_hint()
+            _, network = local_network_hint()
             self.guard = guard_mod.Guard(
                 self.alerts, ports=ports, host=self.guard_host,
                 network=None if network.startswith("127.") else network, interval=interval,
@@ -331,6 +335,8 @@ class App:
 
     def report(self, job: Job, fmt: str, lang: str):
         """(bytes, content_type, extension) for a finished job, in any report format."""
+        if job.meta is None or job.hosts is None:
+            raise ScanRequestError("the scan has not finished", 409)
         lang = lang if lang in self.engine.STRINGS else job.lang
         return reports_mod.report_bytes(fmt, job.meta, job.hosts, lang)
 
@@ -439,7 +445,7 @@ def make_handler(app: App):
                 return  # the browser went away
             except ScanRequestError as err:
                 self._json(err.status, {"error": str(err)})
-            except Exception:  # noqa: BLE001 - never leak a traceback to the page
+            except Exception:
                 logger.debug("request failed", exc_info=True)
                 try:
                     self._json(500, {"error": "internal error"})
@@ -722,7 +728,8 @@ def open_ui_window(url: str) -> bool:
     command = app_window_command(url) if sys.platform.startswith("linux") else None
     if command:
         try:
-            subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            # `command` is a browser executable plus our own loopback URL, from app_window_command(); no shell
+            subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,  # noqa: S603
                              start_new_session=True)
             return True
         except OSError as exc:

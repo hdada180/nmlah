@@ -214,7 +214,7 @@ def scan_udp_port(ip: str, port: int, timeout: float = DEFAULT_UDP_TIMEOUT, canc
         if check is not None:
             try:
                 found = check(reply)
-            except Exception as exc:  # noqa: BLE001 - a hostile reply must not end the scan
+            except Exception as exc:
                 logger.debug("UDP %s:%s reply check failed", ip, port, exc_info=True)
                 if diagnostics is not None:
                     diagnostics.warn("detector_error", f"udp/{port}: {type(exc).__name__}")

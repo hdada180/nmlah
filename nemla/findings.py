@@ -91,9 +91,11 @@ def assess_host(host: dict) -> list:
                     evidence=basis + (p.get("evidence") or f"FTP on {where}")
                     + ("; AUTH TLS offered but clear-text login still accepted" if details.get("starttls") else ""))
             elif p.get("auth") == "none" and (detected == "redis" or (by_port and n == 6379)):
-                add("redis_open", "high", n, confidence=max(conf, 0.9), evidence="PING answered +PONG without a password")
+                add("redis_open", "high", n, confidence=max(conf, 0.9),
+                    evidence="PING answered +PONG without a password")
             elif p.get("auth") == "none" and (detected == "memcached" or (by_port and n == 11211)):
-                add("memcached", "high", n, confidence=max(conf, 0.9), evidence="the `version` command was answered without authentication")
+                add("memcached", "high", n, confidence=max(conf, 0.9),
+                    evidence="the `version` command was answered without authentication")
             elif p.get("auth") == "none" and (p.get("product") == "Elasticsearch" or (by_port and n == 9200)):
                 add("es_open", "high", n, confidence=0.95, evidence="GET / returned cluster information without a login")
             elif n in _REMOTE_PORTS or detected in ("rdp", "vnc"):
@@ -121,9 +123,10 @@ def assess_host(host: dict) -> list:
 
         # -- protocol details ------------------------------------------------
         if detected == "ssh":
-            protocol = str((details.get("protocol") or ""))
+            protocol = str(details.get("protocol") or "")
             if protocol.startswith("1.") and protocol != "1.99":
-                add("ssh_protocol1", "high", n, confidence=0.95, evidence=f"banner announces protocol {protocol}", version=protocol)
+                add("ssh_protocol1", "high", n, confidence=0.95,
+                    evidence=f"banner announces protocol {protocol}", version=protocol)
             elif protocol == "1.99":
                 add("ssh_protocol1", "medium", n, confidence=0.9,
                     evidence="banner announces protocol 1.99 (SSH-1 still accepted)", version=protocol)
@@ -239,7 +242,7 @@ def localized(findings, lang=None) -> list:
 
 
 def summarize_findings(hosts: list) -> dict:
-    counts = {name: 0 for name in SEVERITIES}
+    counts = dict.fromkeys(SEVERITIES, 0)
     for host in hosts:
         for finding in host.get("findings", []):
             counts[finding["severity"]] += 1

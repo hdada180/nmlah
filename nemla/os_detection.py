@@ -119,7 +119,7 @@ def syn_fingerprint(ip: str, port: int, timeout: float = 1.0):
             return None
         return {"window": int(reply[TCP].window), "options": [o[0] for o in reply[TCP].options],
                 "df": bool(int(reply[IP].flags) & 2), "ttl": int(reply[IP].ttl)}
-    except Exception as exc:  # noqa: BLE001 - raw sockets are often refused
+    except Exception as exc:
         logger.debug("SYN fingerprint failed: %s", exc)
         return None
 
@@ -143,8 +143,10 @@ def guess_os_detailed(ttl=None, ports=(), tcp=None, vendor=None) -> OSGuess:
     tcp     the dict returned by syn_fingerprint(), or None
     vendor  the network card's maker, when known
     """
-    scores = {family: 0.0 for family in FAMILIES}
-    evidence, reported, names = [], False, {}
+    scores = dict.fromkeys(FAMILIES, 0.0)
+    evidence: list = []
+    reported = False
+    names: dict = {}
 
     def vote(family, weight, text, name=None):
         scores[family] += weight

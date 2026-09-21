@@ -66,9 +66,9 @@ class Probe:
         self.tls = tls
         self.shared = shared if shared is not None else {}   # results reused between detectors
 
-    def derive(self, **changes) -> "Probe":
-        data = dict(ip=self.ip, port=self.port, timeout=self.timeout, cancel=self.cancel,
-                    budget=self.budget, banner=self.banner, tls=self.tls, shared=self.shared)
+    def derive(self, **changes) -> Probe:
+        data = {"ip": self.ip, "port": self.port, "timeout": self.timeout, "cancel": self.cancel,
+                "budget": self.budget, "banner": self.banner, "tls": self.tls, "shared": self.shared}
         data.update(changes)
         return Probe(**data)
 
@@ -97,7 +97,7 @@ class Detector:
 
     name = ""              # canonical service key
     label = ""             # display name
-    ports = ()             # ports where this service usually lives (probed first there)
+    ports: tuple[int, ...] = ()   # ports where this service usually lives (probed first there)
     rarity = 5             # 1 (always try) .. 9 (only at the highest intensity) on other ports
     tls_capable = False    # may run inside a TLS tunnel
 

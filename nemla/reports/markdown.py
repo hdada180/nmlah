@@ -52,9 +52,11 @@ def markdown_text(meta: dict, hosts: list, lang=None) -> str:
                     f"{e(label('r_confidence'))} | {e(label('r_banner'))} |", "|---|---|---|---|---:|---|"]
             for p in host["open_ports"]:
                 product = " ".join(x for x in (p.get("product"), p.get("version")) if x)
-                conf = "" if p.get("confidence") is None else f"{round(p['confidence'] * 100)}%" + (" ~" if p.get("heuristic") else "")
-                out.append(f"| {p['port']}/{e(p.get('proto', 'tcp'))} | {e(p.get('state', 'open'))} | {e(p.get('service', ''))} | "
-                           f"{e(product)} | {conf} | {e(p.get('banner', ''))} |")
+                conf = ""
+                if p.get("confidence") is not None:
+                    conf = f"{round(p['confidence'] * 100)}%" + (" ~" if p.get("heuristic") else "")
+                out.append(f"| {p['port']}/{e(p.get('proto', 'tcp'))} | {e(p.get('state', 'open'))} | "
+                           f"{e(p.get('service', ''))} | {e(product)} | {conf} | {e(p.get('banner', ''))} |")
             out.append("")
         else:
             out += [e(label("r_no_ports")), ""]

@@ -70,7 +70,7 @@ class Job:
     """One unit of work. `key` groups jobs that share a per-host limit; `arg` is
     whatever the caller wants back with the result."""
 
-    __slots__ = ("key", "fn", "arg", "kind", "limiter")
+    __slots__ = ("arg", "fn", "key", "kind", "limiter")
 
     def __init__(self, key, fn, arg=None, kind: str = "", limiter=None):
         self.key, self.fn, self.arg, self.kind, self.limiter = key, fn, arg, kind, limiter
@@ -97,7 +97,7 @@ class Scheduler:
         self.cancel = cancel if cancel is not None else threading.Event()
         self.diagnostics = diagnostics
         self.window = max(8, int(window)) if window else self.workers * 4
-        self._extra = collections.deque()
+        self._extra: collections.deque = collections.deque()
 
     def add(self, job: Job) -> None:
         """Queue a follow-up job (called by the consumer while iterating `results`)."""
@@ -110,7 +110,7 @@ class Scheduler:
             return job.fn()
         except Cancelled:
             return CANCELLED
-        except Exception as exc:  # noqa: BLE001 - a bug or a hostile peer must not end the scan
+        except Exception as exc:
             logger.debug("job %s failed", job.kind or job.key, exc_info=True)
             if self.diagnostics is not None:
                 self.diagnostics.warn("job_error", f"{job.kind or 'job'}: {type(exc).__name__}")
@@ -122,10 +122,10 @@ class Scheduler:
         Failed jobs yield a JobFailed, jobs dropped by cancellation yield CANCELLED.
         """
         source = iter(jobs)
-        deferred = collections.deque()      # pulled from `source` but their key is busy
-        inflight = {}
-        busy = collections.Counter()
-        finished = queue.SimpleQueue()      # completed futures, pushed by the workers
+        deferred: collections.deque = collections.deque()   # pulled from `source` but their key is busy
+        inflight: dict = {}
+        busy: collections.Counter = collections.Counter()
+        finished: queue.SimpleQueue = queue.SimpleQueue()   # completed futures, pushed by the workers
         source_done = False
         pool = ThreadPoolExecutor(max_workers=self.workers, thread_name_prefix="nemla")
 

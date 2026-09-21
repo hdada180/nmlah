@@ -33,7 +33,7 @@ def test_jobs_are_pulled_lazily_and_memory_stays_bounded():
 
     scheduler = Scheduler(workers=8, per_key=8)
     finished = 0
-    for _job, result in scheduler.results(source()):
+    for _ in scheduler.results(source()):
         finished += 1
         peak_ahead[0] = max(peak_ahead[0], pulled[0] - finished)
     assert finished == 65535
@@ -279,15 +279,15 @@ def test_detection_survives_a_malicious_http_server(tcp_server):
     info = nemla.detect_service("127.0.0.1", port, b"", "", 1.0)
     assert time.monotonic() - started < 5
     text = " ".join(str(v) for v in info.values())
-    assert "\x1b" not in text and "\x07" not in text and "‮" not in text
+    assert "\x1b" not in text and "\x07" not in text and "\u202e" not in text
     assert len(info.get("title", "")) <= 80 and len(info.get("banner", "")) <= 120
 
 
 def test_clean_text_removes_terminal_escapes_and_bidi_tricks():
-    dirty = "ok\x1b[31mred\x1b[0m\x07\r\nnew‮line⁦x\x00"
+    dirty = "ok\x1b[31mred\x1b[0m\x07\r\nnew\u202eline\u2066x\x00"
     cleaned = net.clean_text(dirty)
     assert all(ch.isprintable() for ch in cleaned) and cleaned.startswith("ok") and cleaned.endswith("x")
-    assert "\x1b" not in cleaned and "‮" not in cleaned and "\n" not in cleaned
+    assert "\x1b" not in cleaned and "\u202e" not in cleaned and "\n" not in cleaned
     assert len(net.clean_text("a" * 1000, 50)) == 50
     assert net.clean_text(b"\xff\xfeabc") .endswith("abc")
 
@@ -312,7 +312,7 @@ def test_timeouts_use_the_monotonic_clock(path):
 
 def test_no_silent_exception_swallowing_left():
     offenders = []
-    for path in list(ROOT.rglob("*.py")) + [ROOT.parent / "nemla_ui" / "server.py"]:
+    for path in [*ROOT.rglob("*.py"), ROOT.parent / "nemla_ui" / "server.py"]:
         lines = path.read_text(encoding="utf-8").splitlines()
         for i, line in enumerate(lines):
             if line.strip().startswith("except Exception") and i + 1 < len(lines) and lines[i + 1].strip() == "pass":

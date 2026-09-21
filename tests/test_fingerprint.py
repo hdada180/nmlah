@@ -148,7 +148,7 @@ def test_ftp_banner_features_and_system(tcp_server):
     res = scan(port)
     assert (res["service"], res["product"], res["version"]) == ("FTP", "vsftpd", "3.0.5")
     assert res["details"]["starttls"] is True and res["details"]["system"].startswith("UNIX")
-    finding = [f for f in nemla.assess_host({"ip": "10.0.0.5", "open_ports": [res]}) if f["id"] == "ftp"][0]
+    finding = next(f for f in nemla.assess_host({"ip": "10.0.0.5", "open_ports": [res]}) if f["id"] == "ftp")
     assert finding["severity"] == "low"                       # encryption offered: one step down from medium
 
 

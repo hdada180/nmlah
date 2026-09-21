@@ -121,7 +121,7 @@ def test_arp_binding_change_on_the_gateway_is_high():
     state = guard.new_state()
     guard.evaluate_sweep({GW: MAC_GW, A: MAC_A}, state, GW)
     alerts = guard.evaluate_sweep({GW: MAC_A, A: MAC_A}, state, GW)
-    change = [a for a in alerts if a["kind"] == "arp_change"][0]
+    change = next(a for a in alerts if a["kind"] == "arp_change")
     assert change["severity"] == "high" and change["detail"]["gateway"] is True
     assert (change["detail"]["old_mac"], change["detail"]["new_mac"]) == (MAC_GW, MAC_A)
     assert ("arp_dup", "high") in kinds(alerts)  # one MAC now answers for the gateway and another IP
@@ -254,7 +254,7 @@ def test_tripwire_escalates_instead_of_flooding():
 def test_tripwire_speaks_like_the_service_it_imitates(monkeypatch):
     port = free_port()
     monkeypatch.setitem(guard._BANNERS, port, b"SSH-2.0-OpenSSH_8.9p1 Ubuntu\r\n")
-    log, g = make_guard(ports=[port])
+    _log, g = make_guard(ports=[port])
     g.start()
     try:
         assert poke(port, read=True).startswith(b"SSH-2.0-OpenSSH")
@@ -284,7 +284,7 @@ def test_a_busy_port_is_reported_not_fatal():
     taken.bind(("127.0.0.1", 0))
     taken.listen(1)
     busy = taken.getsockname()[1]
-    log, g = make_guard(ports=[busy, 0])
+    _log, g = make_guard(ports=[busy, 0])
     try:
         status = g.start()
         assert busy in status["failed"] and len(status["decoys"]) == 1
@@ -294,7 +294,7 @@ def test_a_busy_port_is_reported_not_fatal():
 
 
 def test_stopping_closes_the_decoys():
-    log, g = make_guard()
+    _log, g = make_guard()
     port = g.start()["decoys"][0]
     g.stop()
     time.sleep(0.6)

@@ -51,9 +51,9 @@ def csv_text(hosts: list, lang=None) -> str:
         base = [csv_cell(v) for v in base]
         tail = guess.get("confidence", "")
         if not h.get("open_ports"):
-            writer.writerow(base + ["", "", "", "", "", "", "", "", tail])
+            writer.writerow([*base, "", "", "", "", "", "", "", "", tail])
         for p in h.get("open_ports", []):
-            writer.writerow(base[:5] + [p["port"], csv_cell(p.get("service", "")), csv_cell(p.get("banner", "")),
-                                        csv_cell(p.get("product", "")), csv_cell(p.get("version", "")),
-                                        p.get("proto", "tcp"), p.get("state", "open"), p.get("confidence", ""), tail])
+            writer.writerow([*base[:5], p["port"], csv_cell(p.get("service", "")), csv_cell(p.get("banner", "")),
+                             csv_cell(p.get("product", "")), csv_cell(p.get("version", "")),
+                             p.get("proto", "tcp"), p.get("state", "open"), p.get("confidence", ""), tail])
     return buf.getvalue()

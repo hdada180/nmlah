@@ -41,7 +41,8 @@ class _HostState:
 
     def __init__(self, ip: str, info: dict, remaining: int):
         self.ip, self.info, self.remaining = ip, info, remaining
-        self.tcp, self.udp = [], []
+        self.tcp: list = []
+        self.udp: list = []
         self.finalizing = False
 
 

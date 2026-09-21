@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Nemla (نملة) launcher: `python3 nemla.py ...` runs the `nemla` package that sits next to this file.
 
 Examples:

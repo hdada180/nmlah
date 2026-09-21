@@ -87,7 +87,7 @@ def discover_hosts(ips, workers: int = 100, probe_ports=DISCOVERY_PORTS, use_arp
         by_arp = len(found)
         missing = [ip for ip in targets if ip not in found]
         progress(total - len(missing))
-        if not missing or cancel is not None and cancel.is_set():
+        if not missing or (cancel is not None and cancel.is_set()):
             pass
         elif not found:
             log(t("probe_start", n=len(missing)))

@@ -4,8 +4,6 @@ import socket
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 from http.server import ThreadingHTTPServer
 
 import pytest
@@ -114,8 +112,10 @@ def test_run_scan_cancel_between_hosts(lab_port):
         if event["type"] == "host_done":
             cancel.set()
 
+    # hosts are scanned side by side; one worker makes the order (and so the outcome) deterministic:
+    # the first host is finished, then the cancel event drops the second one before it starts
     hosts, meta = nemla.run_scan("127.0.0.1-2", ["127.0.0.1", "127.0.0.2"], [lab_port],
-                                 no_ping=True, no_os=True, emit=emit, cancel=cancel)
+                                 no_ping=True, no_os=True, threads=1, emit=emit, cancel=cancel)
     assert [h["ip"] for h in hosts] == ["127.0.0.1"]
     assert meta["cancelled"] is True
 
@@ -142,7 +142,7 @@ def test_html_report_is_single_pass():
 # --------------------------------------------------------------------------
 
 def test_index_is_served_with_security_headers(ui):
-    app, port = ui
+    _app, port = ui
     status, res, body = call(port, "/")
     assert status == 200 and b"<canvas" in body
     assert "script-src 'self'" in res.getheader("Content-Security-Policy")
@@ -190,7 +190,7 @@ def test_scan_validation(ui):
     assert call(port, "/api/scan", "POST", app.token, {**good, "target": "10.0.0.0/8"})[0] == 400
     assert call(port, "/api/scan", "POST", app.token, {**good, "ports": "abc"})[0] == 400
     assert call(port, "/api/scan", "POST", app.token, {**good, "threads": "many"})[0] == 400
-    status, _, data = call(port, "/api/scan", "POST", app.token, {**good, "lang": "ar", "target": "10.0.0.0/8"})
+    _status, _, data = call(port, "/api/scan", "POST", app.token, {**good, "lang": "ar", "target": "10.0.0.0/8"})
     assert "max-hosts" in json.loads(data)["error"]
 
 
@@ -223,7 +223,7 @@ def test_event_stream_can_be_resumed(ui, lab_port):
     body = {"target": "127.0.0.1", "profile": "custom", "ports": str(lab_port), "no_ping": True,
             "no_os": True, "authorized": True}
     job, events = run_job(app, port, body)
-    status, _, raw = call(port, f"/api/events?job={job}&k={app.token}", headers={"Last-Event-ID": "3"})
+    _status, _, raw = call(port, f"/api/events?job={job}&k={app.token}", headers={"Last-Event-ID": "3"})
     resumed = [line for line in raw.decode().splitlines() if line.startswith("data: ")]
     assert len(resumed) == len(events) - 3
 

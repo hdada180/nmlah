@@ -132,7 +132,7 @@ def test_hostile_scan_parameters_are_refused_with_400(ui, patch):
 
 
 def test_numbers_are_clamped_not_trusted(ui):
-    app, port = ui
+    app, _port = ui
     parsed = app.parse_scan({**GOOD, "threads": 10 ** 9, "timeout": -5, "per_host": 10 ** 6, "rate": 10 ** 12,
                              "max_probes": -3, "intensity": 99, "udp_timeout": 999, "udp_rate": 0})
     options = parsed[4]
@@ -170,7 +170,7 @@ def test_udp_can_be_requested_through_the_api(ui, udp_server):
 
 def test_ipv6_targets_are_accepted_by_the_api(ui):
     app, _ = ui
-    target, lang, ips, ports, options = app.parse_scan({**GOOD, "target": "::1"})
+    _target, _lang, ips, _ports, _options = app.parse_scan({**GOOD, "target": "::1"})
     assert list(ips) == ["::1"]
 
 
@@ -182,13 +182,13 @@ def test_ipv6_targets_are_accepted_by_the_api(ui):
                                   "/web/../../nemla.py", "/%00", "//etc/passwd", "/index.html%00.txt", "/../../../../etc/hosts",
                                   "/app.js/../../server.py"])
 def test_static_files_cannot_leave_the_web_folder(ui, path):
-    app, port = ui
+    _app, port = ui
     status, _, data = call(port, path)
     assert status == 404 and b"import" not in data and b"root:" not in data
 
 
 def test_static_serving_still_works(ui):
-    app, port = ui
+    _app, port = ui
     for path, ctype in (("/", "text/html"), ("/app.js", "text/javascript"), ("/style.css", "text/css"),
                         ("/brand/nemla-mark.svg", "image/svg+xml")):
         status, res, data = call(port, path)
@@ -208,7 +208,7 @@ def test_history_routes_return_saved_scans_in_every_report_format(ui):
     hosts = [{"ip": "10.0.0.5", "mac": None, "os_guess": "Linux", "ttl": 64, "open_ports": [], "findings": []}]
     meta = {"target": "10.0.0.0/24", "scan_time": "now", "duration": 1.0, "ports_scanned": 1, "findings": {}}
     a = history.save(app.data_dir, nemla, meta, hosts)
-    b = history.save(app.data_dir, nemla, meta, hosts + [{**hosts[0], "ip": "10.0.0.6"}])
+    b = history.save(app.data_dir, nemla, meta, [*hosts, {**hosts[0], "ip": "10.0.0.6"}])
     assert [s["id"] for s in json.loads(call(port, "/api/history", token=app.token)[2])["scans"]] == [b, a]
     assert json.loads(call(port, f"/api/history/scan?id={a}", token=app.token)[2])["hosts"][0]["ip"] == "10.0.0.5"
     diff = json.loads(call(port, f"/api/history/diff?a={a}&b={b}", token=app.token)[2])

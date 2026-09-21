@@ -193,7 +193,7 @@ def test_html_report_cannot_be_hijacked_through_placeholder_text():
 
 
 def test_csv_neutralises_formula_injection_and_keeps_old_columns_first():
-    meta, hosts = evil_scan()
+    _meta, hosts = evil_scan()
     text = nemla.csv_text(hosts)
     rows = list(csv.reader(io.StringIO(text.lstrip("﻿"))))
     assert rows[0][:10] == ["ip", "mac", "vendor", "os_guess", "ttl", "port", "service", "banner", "product", "version"]
@@ -264,7 +264,7 @@ def test_reports_switch_language_and_direction(lang, direction, marker):
 
 def test_arabic_and_hebrew_reports_never_leave_findings_untranslated():
     meta, hosts = evil_scan()
-    for lang, word in (("ar", "خدمة"), ("he", "הצפנה")):
+    for lang, _word in (("ar", "خدمة"), ("he", "הצפנה")):
         page = nemla.render_html(meta, hosts, lang)
         assert not re.search(r"Telnet is open on port", page), lang
 
@@ -279,7 +279,7 @@ def test_report_files_are_written_atomically(tmp_path):
     assert target.read_text(encoding="utf-8").startswith("<!DOCTYPE html>")
     assert [p.name for p in target.parent.iterdir()] == ["r.html"]                   # no temp files left
     old = target.read_text(encoding="utf-8")
-    with pytest.raises(Exception):
+    with pytest.raises((KeyError, TypeError, ValueError)):
         reports.write_report(str(target), "html", {"target": "x"}, hosts)             # bad meta: a failure ...
     assert target.read_text(encoding="utf-8") == old                                  # ... never truncates the old file
     if os.name == "posix":

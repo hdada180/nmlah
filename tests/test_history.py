@@ -263,7 +263,7 @@ def test_history_diff_needs_real_ids_and_the_token(gui):
 
 
 def test_a_stopped_scan_is_not_saved(gui, lab_port):
-    app, p = gui
+    app, _p = gui
     job = server.Job("x", "127.0.0.1", "en")
     job.meta = {"cancelled": True, "discovered": 1}
     done = {}

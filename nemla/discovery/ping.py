@@ -49,7 +49,8 @@ def ping_cmd(ip: str, wait: int = 1) -> list:
 def _run(cmd: list, timeout: float, cancel=None, capture: bool = False):
     """Run a command without a shell; stop it early when `cancel` is set. -> (returncode, stdout)."""
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
+        # fixed argument list, never a shell; the address is an ipaddress-validated object, never raw user text
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE if capture else subprocess.DEVNULL,  # noqa: S603
                                 stderr=subprocess.DEVNULL, text=True)
     except OSError:
         return None, ""
@@ -63,7 +64,7 @@ def _run(cmd: list, timeout: float, cancel=None, capture: bool = False):
                 proc.kill()
                 proc.communicate()
                 if cancel is not None and cancel.is_set():
-                    raise Cancelled()
+                    raise Cancelled() from None
                 return None, ""
 
 
@@ -82,7 +83,7 @@ def get_ttl(ip: str, cancel=None):
             pkt = sr1(IP(dst=ip) / ICMP(), timeout=1, verbose=0)
             if pkt is not None:
                 return int(pkt.ttl)
-        except Exception as exc:  # noqa: BLE001 - raw sockets may be refused
+        except Exception as exc:
             logger.debug("scapy ICMP probe failed: %s", exc)
     if shutil.which("ping") and parse_ip(ip) is not None:
         _, out = _run(ping_cmd(ip), 3.0, cancel, capture=True)

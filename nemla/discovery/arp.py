@@ -20,6 +20,7 @@ import socket
 import subprocess
 import sys
 import time
+from collections.abc import Iterable
 from pathlib import Path
 
 from ..log import logger
@@ -55,7 +56,8 @@ def parse_arp_table(text: str) -> dict:
 
 def _command(cmd: list, timeout: float = 5.0) -> str:
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout
+        # fixed argument list, never a shell; `cmd` is built by this module from constants and validated addresses
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False).stdout  # noqa: S603
     except (OSError, subprocess.SubprocessError) as exc:
         logger.debug("%s failed: %s", cmd[0], exc)
         return ""
@@ -80,7 +82,7 @@ def nudge(ips, limit: int = 1 << 16) -> int:
     Nothing is expected back; live hosts simply appear in the neighbour cache.
     Returns how many addresses were nudged.
     """
-    socks = {}
+    socks: dict = {}
     sent = 0
     try:
         for ip in ips:
@@ -127,6 +129,7 @@ def wait_for_neighbors(settle: float = 2.5, cancel=None) -> dict:
 def neighbor_sweep(targets, settle: float = 2.5, cancel=None) -> dict:
     """{ip: mac} for the devices among `targets` (a network string or an iterable of
     addresses) that answered ARP/NDP after a nudge."""
+    ips: Iterable[str]
     if isinstance(targets, str):
         net = ipaddress.ip_network(targets, strict=False)
         wanted, ips = None, (str(h) for h in net.hosts())
@@ -161,7 +164,7 @@ def scapy_arp_scan(ips: list, timeout: int = 2, cancel=None):
         raise
     except Cancelled:
         raise
-    except Exception as exc:  # noqa: BLE001 - scapy raises many kinds of errors
+    except Exception as exc:
         logger.debug("scapy ARP scan failed: %s", exc)
         return None
     return found

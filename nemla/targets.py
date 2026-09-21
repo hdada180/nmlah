@@ -53,7 +53,7 @@ class TargetSet:
 
 def _merge(spans: list) -> list:
     """Sort spans and join the ones that touch or overlap, so no address repeats."""
-    merged = []
+    merged: list = []
     for version, first, last in sorted(spans):
         if merged and merged[-1][0] == version and first <= merged[-1][2] + 1:
             merged[-1] = (version, merged[-1][1], max(last, merged[-1][2]))
@@ -82,7 +82,7 @@ def resolve(name: str, family=None, all_addresses: bool = False) -> list:
         raise ValueError(t("cannot_resolve", spec=name)) from None
     found = []
     for info in infos:
-        addr = info[4][0]
+        addr = str(info[4][0])
         if addr not in found:
             found.append(addr)
     if not found:
@@ -121,13 +121,13 @@ def _spans_for(item: str, family, all_addresses: bool):
     if ":" in item and "-" in item and "%" not in item:      # IPv6 range a-b
         left, _, right = item.partition("-")
         try:
-            first, last = ipaddress.IPv6Address(left), ipaddress.IPv6Address(right)
+            low6, high6 = ipaddress.IPv6Address(left), ipaddress.IPv6Address(right)
         except ValueError:
             raise ValueError(t("bad_range", spec=item)) from None
         _check_family(6, family, item)
-        if last < first:
+        if high6 < low6:
             raise ValueError(t("bad_range", spec=item))
-        return [(6, int(first), int(last))], []
+        return [(6, int(low6), int(high6))], []
 
     addr = parse_ip(item)
     if addr is not None:
@@ -202,7 +202,7 @@ def parse_ports(spec: str) -> list:
         raise ValueError("ports must be text such as 22,80,443 or 1-1000")
     if len(spec) > 20000:
         raise ValueError("the port list is too long")
-    ports = set()
+    ports: set = set()
     for part in re.split(r"[,\s]+", spec.strip()):
         if not part:
             continue

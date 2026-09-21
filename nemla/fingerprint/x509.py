@@ -134,14 +134,14 @@ def _name(data: bytes, start: int, end: int) -> dict:
 def _key_info(data: bytes, start: int, end: int) -> tuple:
     """(type, bits) of a SubjectPublicKeyInfo."""
     _, acs, ace = _read(data, start, end)                     # AlgorithmIdentifier
-    otag, ocs, oce = _read(data, acs, ace)
+    _, ocs, oce = _read(data, acs, ace)
     algorithm = _oid(data, ocs, oce)
     btag, bcs, bce = _read(data, ace, end)                    # BIT STRING
     if btag != 0x03 or bce <= bcs:
         raise X509Error("bad public key")
     if algorithm == "1.2.840.113549.1.1.1":                   # RSA: SEQUENCE { modulus, exponent }
         _, scs, sce = _read(data, bcs + 1, bce)
-        itag, ics, ice = _read(data, scs, sce)
+        _, ics, ice = _read(data, scs, sce)
         modulus = data[ics:ice].lstrip(b"\x00")
         bits = len(modulus) * 8 - (8 - modulus[0].bit_length()) if modulus else 0
         return "RSA", bits
@@ -159,7 +159,7 @@ def _key_info(data: bytes, start: int, end: int) -> tuple:
 
 
 def _san(data: bytes, start: int, end: int) -> list:
-    names = []
+    names: list = []
     _, scs, sce = _read(data, start, end)                     # GeneralNames
     for tag, cs, ce in _children(data, scs, sce):
         if len(names) >= MAX_SAN:
@@ -215,7 +215,7 @@ def parse_certificate(der: bytes) -> dict:
         if tag != 0xA3:                                       # [3] extensions
             continue
         _, ecs, ece = _read(data, cs, ce)
-        for xtag, xcs, xce in _children(data, ecs, ece):
+        for _xtag, xcs, xce in _children(data, ecs, ece):
             oid_tag, o_cs, o_ce = _read(data, xcs, xce)
             if oid_tag == 0x06 and _oid(data, o_cs, o_ce) == "2.5.29.17":
                 pos = o_ce

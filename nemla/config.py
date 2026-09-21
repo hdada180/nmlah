@@ -122,7 +122,7 @@ class ScanOptions:
     lang: str = "en"
 
     @classmethod
-    def checked(cls, **kw) -> "ScanOptions":
+    def checked(cls, **kw) -> ScanOptions:
         opts = cls(**{k: v for k, v in kw.items() if v is not None})
         opts.threads = bounded_int(opts.threads, "threads", 1, MAX_THREADS)
         opts.per_host = bounded_int(opts.per_host, "per-host", 1, MAX_PER_HOST)

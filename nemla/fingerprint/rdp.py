@@ -65,7 +65,8 @@ class Rdp(Detector):
         legacy = self._ask(probe, 0)
         if legacy is None:
             return None
-        extra, evidence = {}, []
+        extra: dict = {}
+        evidence: list = []
         if legacy[0] in ("ok", "legacy") and legacy[1] == 0:
             extra.update(nla="not required", weak_security=True)
             evidence.append("the server accepted legacy standard RDP security")

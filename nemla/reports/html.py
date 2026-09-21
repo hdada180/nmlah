@@ -30,7 +30,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--text); margin: 0; padding: 0 0 60px;
   font-family: 'Segoe UI', Tahoma, Arial, sans-serif; }
-header { background: radial-gradient(600px 220px at 0% 0%, rgba(255,122,26,.16), transparent 70%), linear-gradient(135deg, #141924, #0a0c11);
+header { background: radial-gradient(600px 220px at 0% 0%, rgba(255,122,26,.16), transparent 70%),
+  linear-gradient(135deg, #141924, #0a0c11);
   border-bottom: 2px solid var(--ant-orange); padding: 28px 32px;
   display: flex; align-items: center; }
 header .icon { width: 56px; height: 56px; margin: 0 16px; flex: none; }
@@ -85,8 +86,8 @@ tr:last-child td { border-bottom: none; }
 .sev-low .sev { background: rgba(76,194,255,.14); color: #4cc2ff; border: 1px solid rgba(76,194,255,.45); }
 .sev-info .sev { background: rgba(143,160,196,.14); color: #8fa0c4; border: 1px solid rgba(143,160,196,.4); }
 .sev-info { color: var(--text-dim); }
-.section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 20px; margin-bottom: 18px;
-  font-size: 13px; }
+.section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 20px;
+  margin-bottom: 18px; font-size: 13px; }
 .section ul { margin: 6px 0 0; padding-inline-start: 20px; color: var(--text-dim); }
 .section code { font-family: monospace; direction: ltr; unicode-bidi: isolate; }
 footer { text-align: center; color: var(--text-dim); font-size: 12px; padding: 30px; }
@@ -97,7 +98,8 @@ footer { text-align: center; color: var(--text-dim); font-size: 12px; padding: 3
   <div class="icon">@@MARK@@</div>
   <div>
     <h1>@@TITLE@@</h1>
-    <p>@@L_TARGET@@: <bdi>@@TARGET@@</bdi> &nbsp;|&nbsp; @@L_DATE@@: <bdi>@@SCAN_TIME@@</bdi> &nbsp;|&nbsp; @@L_DURATION@@: <bdi>@@DURATION@@s</bdi></p>
+    <p>@@L_TARGET@@: <bdi>@@TARGET@@</bdi> &nbsp;|&nbsp; @@L_DATE@@: <bdi>@@SCAN_TIME@@</bdi>
+       &nbsp;|&nbsp; @@L_DURATION@@: <bdi>@@DURATION@@s</bdi></p>
   </div>
 </header>
 <div class="summary">
