@@ -58,6 +58,8 @@
           <a href="#" data-fmt="html"><svg><use href="#i-file"/></svg><span data-i18n="export.html">HTML report</span></a>
           <a href="#" data-fmt="json"><svg><use href="#i-file"/></svg><span data-i18n="export.json">JSON data</span></a>
           <a href="#" data-fmt="csv"><svg><use href="#i-file"/></svg><span data-i18n="export.csv">CSV table</span></a>
+          <a href="#" data-fmt="md"><svg><use href="#i-file"/></svg><span data-i18n="export.md">Markdown report</span></a>
+          <a href="#" data-fmt="sarif"><svg><use href="#i-file"/></svg><span data-i18n="export.sarif">SARIF (security dashboards)</span></a>
         </div>
       </div>
       <div class="menu" id="langMenu">
@@ -78,6 +80,7 @@
       <button role="tab" data-tab="scan" aria-selected="true"><svg><use href="#i-radar"/></svg><span data-i18n="tab.scan">Scan</span></button>
       <button role="tab" data-tab="hosts" aria-selected="false"><svg><use href="#i-nodes"/></svg><span data-i18n="tab.hosts">Hosts</span><b class="count" id="hostCount" data-n="0"></b></button>
       <button role="tab" data-tab="log" aria-selected="false"><svg><use href="#i-terminal"/></svg><span data-i18n="tab.log">Trail</span></button>
+      <button role="tab" data-tab="history" aria-selected="false"><svg><use href="#i-file"/></svg><span data-i18n="tab.history">History</span></button>
       <button role="tab" data-tab="guard" aria-selected="false"><svg><use href="#i-shield"/></svg><span data-i18n="tab.guard">Guard</span><b class="count alarm" id="alertCount" data-n="0"></b></button>
     </nav>
 
@@ -113,6 +116,7 @@
           <label class="switch"><span data-i18n="scan.opt.os">Guess the operating system</span><input type="checkbox" id="optOs" checked><span class="track"></span></label>
           <label class="switch"><span data-i18n="scan.opt.banner">Read service banners</span><input type="checkbox" id="optBanner" checked><span class="track"></span></label>
           <label class="switch"><span data-i18n="scan.opt.noping">Skip ping (target blocks it)</span><input type="checkbox" id="optNoPing"><span class="track"></span></label>
+          <label class="switch"><span data-i18n="scan.opt.udp">Also probe common UDP ports</span><input type="checkbox" id="optUdp"><span class="track"></span></label>
         </div>
 
         <details class="adv">
@@ -149,6 +153,13 @@
       <p class="empty" id="logEmpty" data-i18n="log.empty">The trail will show what Nemla is doing.</p>
     </section>
 
+    <section class="pane" id="pane-history" role="tabpanel" hidden>
+      <div class="history-head"><h2 data-i18n="history.title">Saved scans</h2>
+        <button type="button" class="link" id="historyRefresh" data-i18n="history.refresh">Refresh</button></div>
+      <ul class="history-list" id="historyList"></ul>
+      <p class="empty" id="historyEmpty" data-i18n="history.empty">Finished scans are saved here.</p>
+    </section>
+
     <section class="pane" id="pane-guard" role="tabpanel" hidden>
       <div class="guard-head">
         <div>
@@ -179,19 +190,23 @@
     <div class="badges" id="inspBadges"></div>
     <div class="insp-body">
       <dl class="kv" id="inspKv"></dl>
+      <ul class="evidence" id="inspEvidence" hidden></ul>
       <h3><span data-i18n="insp.findings">Findings</span><b class="count" id="findCount" data-n="0"></b></h3>
       <ul class="find-list" id="inspFindings"></ul>
       <h3><span data-i18n="insp.ports">Open ports</span><b class="count" id="inspCount" data-n="0"></b></h3>
       <ul class="port-list" id="inspPorts"></ul>
+      <p class="udp-note" id="inspUdp" hidden></p>
     </div>
     <div class="insp-foot"><button class="btn" id="inspCopy"><svg><use href="#i-copy"/></svg><span data-i18n="insp.copy">Copy summary</span></button></div>
   </aside>
 
   <section class="panel hud" id="hud" data-state="idle" data-tilt>
-    <div class="stat"><span class="k" data-i18n="hud.hosts">Hosts</span><b id="statHosts">0</b></div>
-    <div class="stat"><span class="k" data-i18n="hud.open">Open ports</span><b id="statPorts">0</b></div>
-    <div class="stat"><span class="k" data-i18n="hud.findings">Findings</span><b id="statFindings">0</b></div>
-    <div class="stat"><span class="k" data-i18n="hud.time">Elapsed</span><b id="statTime">0.0s</b></div>
+    <div class="stats">
+      <div class="stat"><span class="k" data-i18n="hud.hosts">Hosts</span><b id="statHosts">0</b></div>
+      <div class="stat"><span class="k" data-i18n="hud.open">Open ports</span><b id="statPorts">0</b></div>
+      <div class="stat"><span class="k" data-i18n="hud.findings">Findings</span><b id="statFindings">0</b></div>
+      <div class="stat"><span class="k" data-i18n="hud.time">Elapsed</span><b id="statTime">0.0s</b></div>
+    </div>
     <div class="progress">
       <div class="phase"><span class="demo-badge" id="demoBadge" hidden data-i18n="demo.badge">DEMO</span> <span id="phaseText" data-i18n="phase.idle">Ready when you are</span></div>
       <div class="bar"><i id="barFill"></i></div>

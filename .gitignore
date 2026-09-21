@@ -8,3 +8,5 @@ dist/
 # scan output (the sample report is tracked on purpose)
 nemla_report.html
 *.scan.json
+# measurements are machine-specific: keep them out of the repository
+benchmarks/results/

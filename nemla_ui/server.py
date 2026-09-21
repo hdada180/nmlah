@@ -1,8 +1,19 @@
 """Local web server behind Nemla's 3D interface (standard library only).
 
-The server listens on 127.0.0.1 only. Every /api/ call needs a random
-per-launch token (handed to the page in the URL fragment) and a matching
-Host header, so other websites and other machines cannot drive scans.
+Security model
+--------------
+* The server listens on 127.0.0.1 only.
+* Every /api/ call needs a random per-launch token (handed to the page in the
+  URL fragment, which browsers never send to servers). POST calls must carry
+  it in the X-Nemla-Token header, so a form on another website cannot drive
+  scans; GET calls (event streams, downloads) may also pass it as ?k=.
+* The Host header must match (defeats DNS rebinding), a cross-site Origin or
+  Sec-Fetch-Site is refused, request bodies are capped, idle connections time
+  out, and the number of simultaneous connections and event streams is bounded.
+* The page is served with a strict Content-Security-Policy; everything that
+  came from the network is rendered with textContent, never as HTML.
+* Scan input is validated and clamped (targets, ports, threads, timeouts) and
+  ids of saved scans are checked before they touch the file system.
 """
 from __future__ import annotations
 
@@ -22,14 +33,23 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import guard as guard_mod
-from . import history as history_mod
+from nemla import guard as guard_mod
+from nemla import history as history_mod
+from nemla import privileges
+from nemla import reports as reports_mod
+from nemla.config import UDP_PORTS
+from nemla.log import logger
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 MAX_BODY = 64 * 1024
 MAX_HOSTS = 1024
-IDLE_GRACE = 6          # seconds after the window says goodbye before we exit
-IDLE_LIMIT = 150        # seconds without any sign of life before we exit
+MAX_EVENTS = 60000       # events kept per scan; progress and log lines are dropped beyond this
+MAX_STREAMS = 16         # simultaneous event streams
+MAX_CONNECTIONS = 64     # simultaneous connections
+REQUEST_TIMEOUT = 30     # seconds a connection may stall
+IDLE_GRACE = 6           # seconds after the window says goodbye before we exit
+IDLE_LIMIT = 150         # seconds without any sign of life before we exit
+ESSENTIAL_EVENTS = {"start", "phase", "host", "host_start", "host_done", "port", "done", "error"}
 
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -72,15 +92,17 @@ class Job:
         self.id = job_id
         self.target = target
         self.lang = lang
-        self.events = []
+        self.events: list = []
         self.cond = threading.Condition()
         self.cancel = threading.Event()
         self.closed = False
-        self.hosts = None
-        self.meta = None
+        self.hosts: list | None = None
+        self.meta: dict | None = None
 
     def emit(self, event: dict) -> None:
         with self.cond:
+            if len(self.events) >= MAX_EVENTS and event.get("type") not in ESSENTIAL_EVENTS:
+                return  # a very long scan keeps its results but stops recording chatter
             self.events.append(event)
             self.cond.notify_all()
 
@@ -97,32 +119,27 @@ class ScanRequestError(ValueError):
 
 
 def local_network_hint():
-    """(my_ip, 'a.b.c.0/24') for the interface that reaches the outside world.
-
-    A UDP connect() sends nothing; it only asks the OS which address it would use.
-    """
-    ip = "127.0.0.1"
-    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        probe.connect(("10.255.255.255", 1))
-        ip = probe.getsockname()[0]
-    except OSError:
-        pass
-    finally:
-        probe.close()
-    if ip.startswith("127."):
-        return ip, "127.0.0.1"
-    return ip, ip.rsplit(".", 1)[0] + ".0/24"
+    """(my_ip, 'a.b.c.0/24') for the interface that reaches the outside world."""
+    return guard_mod.local_network_hint()
 
 
 def is_root() -> bool:
-    if hasattr(os, "geteuid"):
-        return os.geteuid() == 0
-    try:  # Windows
-        import ctypes
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())
-    except Exception:  # noqa: BLE001
-        return False
+    return privileges.is_elevated()
+
+
+def _number(body: dict, key: str, default, low, high, kind=float):
+    """A number from the request, clamped to [low, high]. Anything that is not a number is an error."""
+    value = body.get(key, default)
+    if isinstance(value, bool):
+        raise ValueError(key)
+    number = kind(value)
+    if number != number or number in (float("inf"), float("-inf")):
+        raise ValueError(key)
+    return min(high, max(low, number))
+
+
+def _flag(body: dict, key: str) -> bool:
+    return body.get(key) is True
 
 
 class App:
@@ -138,87 +155,123 @@ class App:
         self.data_dir = Path(data_dir) if data_dir else guard_mod.data_dir()
         self.alerts = guard_mod.AlertLog(self.data_dir / "guard-alerts.jsonl")
         self.guard = None
-        self.guard_host = "0.0.0.0"
+        self.guard_host = "0.0.0.0"  # noqa: S104 - decoy ports listen on the LAN on purpose (the web UI itself binds loopback)
         self.lock = threading.Lock()
-        self.last_seen = time.time()
+        self._counter_lock = threading.Lock()
+        self.last_seen = time.monotonic()
         self.bye_at = None
         self.sse_clients = 0
         self.finished = threading.Event()
 
     def touch(self) -> None:
-        self.last_seen = time.time()
+        self.last_seen = time.monotonic()
         self.bye_at = None
 
     def running(self) -> bool:
         job = self.job
         return bool(job and not job.closed)
 
+    def stream_opened(self) -> bool:
+        """Count a new event stream; False when there are too many."""
+        with self._counter_lock:
+            if self.sse_clients >= MAX_STREAMS:
+                return False
+            self.sse_clients += 1
+            return True
+
+    def stream_closed(self) -> None:
+        with self._counter_lock:
+            self.sse_clients = max(0, self.sse_clients - 1)
+
     # -- scans --------------------------------------------------------------
 
-    def start_scan(self, body: dict) -> Job:
+    def parse_scan(self, body: dict) -> tuple:
+        """Validate a scan request. Returns (target, lang, ips, ports, options)."""
         engine = self.engine
-        lang = body.get("lang") if body.get("lang") in engine.STRINGS else "en"
+        wanted = body.get("lang")
+        lang = wanted if isinstance(wanted, str) and wanted in engine.STRINGS else "en"
         ui = STRINGS.get(lang, STRINGS["en"])
+        if body.get("authorized") is not True:
+            raise ScanRequestError(ui["consent"], 403)
+
+        target = str(body.get("target", "")).strip()
+        family = body.get("family") if body.get("family") in (4, 6) else None
+        try:
+            if not target or len(target) > 200:
+                raise ValueError(target[:40] or "?")
+            ips = engine.iter_targets(target, MAX_HOSTS, family)
+        except ValueError as err:
+            raise ScanRequestError(engine.t("invalid_target", lang=lang, err=err)) from None
+
+        profile = body.get("profile", "quick")
+        try:
+            if profile == "standard":
+                ports = list(range(1, 1025))
+            elif profile == "deep":
+                ports = list(range(1, 10001))
+            elif profile == "custom":
+                ports = engine.parse_ports(str(body.get("ports", "")))
+            else:
+                ports = sorted(engine.TOP_PORTS)
+            udp_ports = []
+            if body.get("udp_ports"):
+                udp_ports = engine.parse_ports(str(body["udp_ports"]))[:1024]
+            elif _flag(body, "udp"):
+                udp_ports = list(UDP_PORTS)
+        except ValueError as err:
+            raise ScanRequestError(engine.t("invalid_ports", lang=lang, err=err)) from None
+
+        try:
+            threads = int(_number(body, "threads", 150, 1, 500, int))
+            options = {
+                "no_ping": _flag(body, "no_ping"), "no_os": _flag(body, "no_os"),
+                "no_banner": _flag(body, "no_banner"),
+                "threads": threads,
+                "timeout": _number(body, "timeout", 0.7, 0.1, 10.0),
+                "per_host": int(_number(body, "per_host", 100, 1, threads, int)),
+                "rate": _number(body, "rate", 0, 0, 5000.0),
+                "max_probes": int(_number(body, "max_probes", 0, 0, 10_000_000, int)),
+                "intensity": int(_number(body, "intensity", 5, 0, 9, int)),
+                "udp_ports": tuple(udp_ports),
+                "udp_timeout": _number(body, "udp_timeout", 1.0, 0.2, 5.0),
+                "udp_rate": _number(body, "udp_rate", 200, 1, 1000.0),
+            }
+        except (TypeError, ValueError, OverflowError):
+            raise ScanRequestError(ui["bad_number"]) from None
+        return target, lang, ips, ports, options
+
+    def start_scan(self, body: dict) -> Job:
+        wanted = body.get("lang")
+        lang = wanted if isinstance(wanted, str) and wanted in self.engine.STRINGS else "en"
+        ui = STRINGS.get(lang, STRINGS["en"])
+        if self.running():
+            raise ScanRequestError(ui["busy"], 409)
+        target, lang, ips, ports, options = self.parse_scan(body)   # may resolve names: no lock held
         with self.lock:
             if self.running():
                 raise ScanRequestError(ui["busy"], 409)
-            engine._LANG = lang
-            if body.get("authorized") is not True:
-                raise ScanRequestError(ui["consent"], 403)
-
-            target = str(body.get("target", "")).strip()
-            try:
-                if not target or len(target) > 200:
-                    raise ValueError(target or "?")
-                ips = engine.parse_targets(target, MAX_HOSTS)
-            except ValueError as err:
-                raise ScanRequestError(engine.t("invalid_target", err=err)) from None
-
-            profile = body.get("profile", "quick")
-            try:
-                if profile == "standard":
-                    ports = list(range(1, 1025))
-                elif profile == "deep":
-                    ports = list(range(1, 10001))
-                elif profile == "custom":
-                    ports = engine.parse_ports(str(body.get("ports", "")))
-                else:
-                    ports = sorted(engine.TOP_PORTS)
-            except ValueError as err:
-                raise ScanRequestError(engine.t("invalid_ports", err=err)) from None
-
-            try:
-                threads = min(500, max(1, int(body.get("threads", 150))))
-                timeout = min(10.0, max(0.1, float(body.get("timeout", 0.7))))
-            except (TypeError, ValueError):
-                raise ScanRequestError(ui["bad_number"]) from None
-
             job = Job(secrets.token_hex(6), target, lang)
             self.job = job
-            options = {
-                "no_ping": bool(body.get("no_ping")), "no_os": bool(body.get("no_os")),
-                "no_banner": bool(body.get("no_banner")),
-                "threads": threads, "timeout": timeout,
-            }
-            threading.Thread(target=self._run_job, args=(job, ips, ports, options),
-                             daemon=True).start()
+            threading.Thread(target=self._run_job, args=(job, ips, ports, options), daemon=True).start()
             return job
 
-    def _run_job(self, job: Job, ips: list, ports: list, options: dict) -> None:
+    def _run_job(self, job: Job, ips, ports: list, options: dict) -> None:
         engine = self.engine
         engine._LOG_SINK = lambda msg: job.emit({"type": "log", "msg": msg})
         try:
+            shown = dict(options, udp_ports=list(options["udp_ports"]))
             job.emit({"type": "start", "job": job.id, "target": job.target,
                       "addresses": len(ips), "ports": len(ports),
-                      "started": time.time(), "options": options})
-            hosts, meta = engine.run_scan(job.target, ips, ports, emit=job.emit,
-                                          cancel=job.cancel, **options)
+                      "started": time.time(), "options": shown})
+            hosts, meta = engine.run_scan(job.target, ips, ports, emit=job.emit, cancel=job.cancel,
+                                          lang=job.lang, **options)
             job.hosts, job.meta = hosts, meta
             done = {"type": "done", "meta": meta, "hosts": hosts}
             if not meta["cancelled"] and meta["discovered"]:
                 self._remember(job, done)
             job.emit(done)
-        except Exception as exc:  # noqa: BLE001 - report anything to the page
+        except Exception as exc:
+            logger.debug("scan failed", exc_info=True)
             job.emit({"type": "error", "msg": f"{type(exc).__name__}: {exc}"})
         finally:
             engine._LOG_SINK = None
@@ -226,6 +279,8 @@ class App:
 
     def _remember(self, job: Job, done: dict) -> None:
         """Save a finished scan and, if this target was scanned before, say what changed."""
+        if job.meta is None or job.hosts is None:
+            return
         try:
             done["scan_id"] = history_mod.save(self.data_dir, self.engine, job.meta, job.hosts)
             before = history_mod.previous_for(self.data_dir, job.target, done["scan_id"])
@@ -234,8 +289,10 @@ class App:
                 diff = self.engine.diff_scans(old["hosts"], job.hosts)
                 diff["against"] = {"id": before, "scan_time": old.get("scan_time", "")}
                 done["diff"] = diff
-        except (OSError, KeyError, TypeError, ValueError):
-            pass  # history is a bonus: a full disk must never lose the scan itself
+        except (OSError, KeyError, TypeError, ValueError) as exc:
+            # history is a bonus: a full disk must never lose the scan itself, but say so
+            logger.warning("could not save the scan to the history: %s", exc)
+            done["history_error"] = str(exc)[:200]
 
     # -- guard mode ---------------------------------------------------------
 
@@ -251,10 +308,12 @@ class App:
                 if not ports or len(ports) > 16 or any(p < 0 or p > 65535 for p in ports):
                     raise ValueError
                 interval = float(body.get("interval", 60))
+                if interval != interval:
+                    raise ValueError
             except (TypeError, ValueError):
                 raise ScanRequestError("Decoy ports must be numbers between 1 and 65535 (at most 16).") from None
             interval = 0.0 if interval <= 0 else min(3600.0, max(10.0, interval))
-            ip, network = local_network_hint()
+            _, network = local_network_hint()
             self.guard = guard_mod.Guard(
                 self.alerts, ports=ports, host=self.guard_host,
                 network=None if network.startswith("127.") else network, interval=interval,
@@ -270,22 +329,21 @@ class App:
         return {"running": False}
 
     def report(self, job: Job, fmt: str, lang: str):
-        """(bytes, content_type, extension) for a finished job."""
-        engine = self.engine
-        with self.lock:
-            previous = engine._LANG
-            engine._LANG = lang if lang in engine.STRINGS else job.lang
-            try:
-                if fmt == "json":
-                    return (engine.json_text(job.meta, job.hosts).encode("utf-8"),
-                            "application/json; charset=utf-8", "json")
-                if fmt == "csv":
-                    return (engine.csv_text(job.hosts).encode("utf-8-sig"),
-                            "text/csv; charset=utf-8", "csv")
-                return (engine.render_html(job.meta, job.hosts).encode("utf-8"),
-                        "text/html; charset=utf-8", "html")
-            finally:
-                engine._LANG = previous
+        """(bytes, content_type, extension) for a finished job, in any report format."""
+        if job.meta is None or job.hosts is None:
+            raise ScanRequestError("the scan has not finished", 409)
+        lang = lang if lang in self.engine.STRINGS else job.lang
+        return reports_mod.report_bytes(fmt, job.meta, job.hosts, lang)
+
+    def ui_strings(self) -> dict:
+        """The texts of the findings (title, why it matters, how to fix it) for the page, in every language,
+        so the page can show any finding in the language the user switches to."""
+        prefixes = (("f_", "find."), ("fd_", "finddesc."), ("fr_", "findfix."))
+        out = {}
+        for lang, table in self.engine.STRINGS.items():
+            out[lang] = {target + key[len(prefix):]: text
+                         for key, text in table.items() for prefix, target in prefixes if key.startswith(prefix)}
+        return out
 
     def info(self) -> dict:
         engine = self.engine
@@ -294,8 +352,9 @@ class App:
         return {
             "version": engine.__version__, "platform": sys.platform,
             "hostname": socket.gethostname(), "local_ip": ip, "suggested_target": network,
-            "root": is_root(), "scapy": bool(engine.HAVE_SCAPY),
+            "root": is_root(), "scapy": bool(engine.HAVE_SCAPY), "capabilities": privileges.detect().as_dict(),
             "top_ports": len(engine.TOP_PORTS), "max_hosts": MAX_HOSTS, "lang": self.lang,
+            "udp_ports": list(UDP_PORTS), "formats": list(reports_mod.FORMATS),
             "job": {"id": job.id, "target": job.target, "finished": job.closed} if job else None,
             "guard": self.guard.status() if self.guard else None,
             "guard_ports": list(guard_mod.DEFAULT_DECOYS),
@@ -306,6 +365,7 @@ def make_handler(app: App):
     class Handler(BaseHTTPRequestHandler):
         server_version = "NemlaUI"
         sys_version = ""
+        timeout = REQUEST_TIMEOUT
 
         def log_message(self, *args):  # keep the terminal quiet
             pass
@@ -320,6 +380,7 @@ def make_handler(app: App):
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Cross-Origin-Resource-Policy", "same-origin")
             for key, value in (headers or {}).items():
                 self.send_header(key, value)
             self.end_headers()
@@ -334,11 +395,13 @@ def make_handler(app: App):
                 length = int(self.headers.get("Content-Length") or 0)
             except ValueError:
                 length = 0
-            if length <= 0 or length > MAX_BODY:
+            if length > MAX_BODY:
+                raise ScanRequestError("request too large", 413)
+            if length <= 0:
                 return {}
             try:
                 data = json.loads(self.rfile.read(length).decode("utf-8"))
-            except (ValueError, UnicodeDecodeError):
+            except (ValueError, UnicodeDecodeError, RecursionError):
                 return {}
             return data if isinstance(data, dict) else {}
 
@@ -346,14 +409,18 @@ def make_handler(app: App):
             return (self.headers.get("Host") or "").lower() in app.allowed_hosts
 
         def _origin_ok(self) -> bool:
+            if (self.headers.get("Sec-Fetch-Site") or "").lower() == "cross-site":
+                return False
             origin = self.headers.get("Origin")
             if not origin:
                 return True
             return origin.lower() in {f"http://{h}" for h in app.allowed_hosts}
 
         def _authorized(self, query) -> bool:
-            token = self.headers.get("X-Nemla-Token") or (query.get("k") or [""])[0]
-            return hmac.compare_digest(token.encode("utf-8"), app.token.encode("utf-8"))
+            token = self.headers.get("X-Nemla-Token")
+            if token is None and self.command != "POST":   # only reads may pass the token in the address
+                token = (query.get("k") or [""])[0]
+            return hmac.compare_digest((token or "").encode("utf-8"), app.token.encode("utf-8"))
 
         # -- routing --------------------------------------------------------
 
@@ -367,6 +434,20 @@ def make_handler(app: App):
             self._route()
 
         def _route(self):
+            try:
+                self._dispatch()
+            except (BrokenPipeError, ConnectionError, socket.timeout):
+                return  # the browser went away
+            except ScanRequestError as err:
+                self._json(err.status, {"error": str(err)})
+            except Exception:
+                logger.debug("request failed", exc_info=True)
+                try:
+                    self._json(500, {"error": "internal error"})
+                except OSError:
+                    pass
+
+        def _dispatch(self):
             url = urlparse(self.path)
             query = parse_qs(url.query)
             if not self._host_ok():
@@ -377,12 +458,13 @@ def make_handler(app: App):
                 return self._json(405, {"error": "method not allowed"})
             if not self._authorized(query):
                 return self._json(401, {"error": "unauthorized"})
-            if self.command == "POST" and not self._origin_ok():
+            if not self._origin_ok():
                 return self._json(403, {"error": "bad origin"})
             app.touch()
             name = url.path[len("/api/"):]
             routes = {
                 ("GET", "info"): lambda: self._json(200, app.info()),
+                ("GET", "strings"): lambda: self._json(200, app.ui_strings()),
                 ("POST", "scan"): self._api_scan,
                 ("POST", "stop"): self._api_stop,
                 ("GET", "events"): lambda: self._api_events(query),
@@ -391,6 +473,8 @@ def make_handler(app: App):
                 ("POST", "bye"): self._api_bye,
                 ("GET", "history"): lambda: self._json(
                     200, {"scans": history_mod.list_scans(app.data_dir)}),
+                ("GET", "history/scan"): lambda: self._api_history_scan(query),
+                ("GET", "history/report"): lambda: self._api_history_report(query),
                 ("GET", "history/diff"): lambda: self._api_history_diff(query),
                 ("POST", "guard/start"): self._api_guard_start,
                 ("POST", "guard/stop"): lambda: self._json(200, app.stop_guard()),
@@ -420,6 +504,8 @@ def make_handler(app: App):
             if target.suffix.lower() == ".html":
                 headers["Content-Security-Policy"] = CSP
                 headers["X-Frame-Options"] = "DENY"
+                headers["Cross-Origin-Opener-Policy"] = "same-origin"
+                headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
             self._send(200, target.read_bytes(), ctype, headers)
 
         # -- API ------------------------------------------------------------
@@ -439,17 +525,37 @@ def make_handler(app: App):
             self._json(200, {"ok": True})
 
         def _api_bye(self):
-            app.bye_at = time.time()
+            app.bye_at = time.monotonic()
             self._json(200, {"ok": True})
 
+        def _history_pair(self, query):
+            a, b = (query.get("a") or [""])[0], (query.get("b") or [""])[0]
+            return a, history_mod.load(app.data_dir, a), history_mod.load(app.data_dir, b)
+
         def _api_history_diff(self, query):
-            old = history_mod.load(app.data_dir, (query.get("a") or [""])[0])
-            new = history_mod.load(app.data_dir, (query.get("b") or [""])[0])
+            a, old, new = self._history_pair(query)
             if old is None or new is None:
                 return self._json(404, {"error": "no such scan"})
             diff = app.engine.diff_scans(old["hosts"], new["hosts"])
-            diff["against"] = {"id": (query.get("a") or [""])[0], "scan_time": old.get("scan_time", "")}
+            diff["against"] = {"id": a, "scan_time": old.get("scan_time", "")}
             self._json(200, diff)
+
+        def _api_history_scan(self, query):
+            data = history_mod.load(app.data_dir, (query.get("id") or [""])[0])
+            if data is None:
+                return self._json(404, {"error": "no such scan"})
+            self._json(200, data)
+
+        def _api_history_report(self, query):
+            data = history_mod.load(app.data_dir, (query.get("id") or [""])[0])
+            if data is None:
+                return self._json(404, {"error": "no such scan"})
+            fmt = (query.get("fmt") or ["html"])[0]
+            lang = (query.get("lang") or ["en"])[0]
+            lang = lang if lang in app.engine.STRINGS else "en"
+            body, ctype, ext = reports_mod.report_bytes(fmt, history_mod.meta_of(data), data["hosts"], lang)
+            self._send(200, body, ctype, {
+                "Content-Disposition": f'attachment; filename="nemla-{(query.get("id") or ["scan"])[0][:40]}.{ext}"'})
 
         def _api_guard_start(self):
             try:
@@ -474,18 +580,22 @@ def make_handler(app: App):
             except ValueError as err:
                 self._json(400, {"error": str(err)})
 
-        def _api_guard_events(self, query):
-            try:  # a reconnecting EventSource resumes after the last alert it saw
-                after = int(self.headers.get("Last-Event-ID") or (query.get("from") or ["0"])[0])
-            except ValueError:
-                after = 0
+        def _stream_headers(self):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
             self.send_header("Cache-Control", "no-cache")
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
-            app.sse_clients += 1
+
+        def _api_guard_events(self, query):
+            try:  # a reconnecting EventSource resumes after the last alert it saw
+                after = int(self.headers.get("Last-Event-ID") or (query.get("from") or ["0"])[0])
+            except ValueError:
+                after = 0
+            if not app.stream_opened():
+                return self._json(429, {"error": "too many streams"})
             try:
+                self._stream_headers()
                 while not app.finished.is_set():
                     batch = app.alerts.wait(after, 5)
                     if batch:
@@ -496,11 +606,11 @@ def make_handler(app: App):
                     else:
                         self.wfile.write(b": ping\n\n")
                     self.wfile.flush()
-                    app.last_seen = time.time()
+                    app.last_seen = time.monotonic()
             except (BrokenPipeError, ConnectionError, OSError):
                 return
             finally:
-                app.sse_clients -= 1
+                app.stream_closed()
 
         def _job_for(self, query):
             job = app.job
@@ -517,13 +627,10 @@ def make_handler(app: App):
             except ValueError:
                 index = 0
             index = max(0, index)
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("X-Accel-Buffering", "no")
-            self.end_headers()
-            app.sse_clients += 1
+            if not app.stream_opened():
+                return self._json(429, {"error": "too many streams"})
             try:
+                self._stream_headers()
                 while True:
                     with job.cond:
                         if index >= len(job.events) and not job.closed:
@@ -541,11 +648,11 @@ def make_handler(app: App):
                     else:
                         self.wfile.write(b": ping\n\n")
                     self.wfile.flush()
-                    app.last_seen = time.time()
+                    app.last_seen = time.monotonic()
             except (BrokenPipeError, ConnectionError, OSError):
                 return
             finally:
-                app.sse_clients -= 1
+                app.stream_closed()
 
         def _api_report(self, query):
             job = self._job_for(query)
@@ -560,6 +667,42 @@ def make_handler(app: App):
                 "Content-Disposition": f'attachment; filename="nemla-{safe}-{stamp}.{ext}"'})
 
     return Handler
+
+
+class BoundedServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer with a ceiling on simultaneous connections."""
+
+    daemon_threads = True
+    request_queue_size = 32
+    # Windows: SO_REUSEADDR lets a second process bind the very same port and receive the connections meant
+    # for this one (and the token they carry). There the port is taken exclusively instead; on POSIX
+    # SO_REUSEADDR only skips TIME_WAIT, which is what we want after a restart.
+    allow_reuse_address = not sys.platform.startswith("win")
+
+    def __init__(self, *args, **kwargs):
+        self._slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
+        super().__init__(*args, **kwargs)
+
+    def server_bind(self):
+        if sys.platform.startswith("win") and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+    def process_request(self, request, client_address):
+        if not self._slots.acquire(blocking=False):
+            self.shutdown_request(request)   # too many at once: drop the newcomer
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
 
 
 # ---------------------------------------------------------------------------
@@ -589,11 +732,12 @@ def open_ui_window(url: str) -> bool:
     command = app_window_command(url) if sys.platform.startswith("linux") else None
     if command:
         try:
-            subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            # `command` is a browser executable plus our own loopback URL, from app_window_command(); no shell
+            subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,  # noqa: S603
                              start_new_session=True)
             return True
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("could not start the app window: %s", exc)
     try:
         return bool(webbrowser.open(url))
     except webbrowser.Error:
@@ -607,7 +751,7 @@ def open_ui_window(url: str) -> bool:
 def _watch(app: App, httpd) -> None:
     """Quit once the window is gone (only when Nemla opened that window itself)."""
     while not app.finished.wait(1.0):
-        now = time.time()
+        now = time.monotonic()
         if app.sse_clients > 0:
             continue
         gone = (app.bye_at is not None and now - app.bye_at > IDLE_GRACE) \
@@ -624,7 +768,7 @@ def serve(engine, port: int = 0, open_window: bool = True, keep_alive: bool = Fa
     """Run the interface until its window closes (or Ctrl+C). Returns an exit code."""
     app = App(engine, lang)
     try:
-        httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(app))
+        httpd = BoundedServer(("127.0.0.1", port), make_handler(app))
     except OSError as exc:
         engine.log(f"Cannot start the interface server on port {port}: {exc}")
         return 1

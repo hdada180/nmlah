@@ -1,0 +1,6 @@
+# scripts and container files run on Linux: keep their line endings
+*.sh text eol=lf
+Dockerfile text eol=lf
+tests/integration/conf/* text eol=lf
+tests/integration/*.yml text eol=lf
+.github/** text eol=lf

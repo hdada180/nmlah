@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Nemla 2.0.0">
 <title>Nemla Recon Report - 127.0.0.1</title>
 <style>
 :root {
@@ -27,6 +28,9 @@ header p { margin: 4px 0 0; color: var(--text-dim); font-size: 13px; }
 .stat .num { font-size: 26px; font-weight: 700; color: var(--ant-orange); }
 .stat .label { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
 .container { padding: 24px 32px; }
+.exec { background: var(--panel); border: 1px solid var(--border); border-inline-start: 4px solid var(--ant-orange);
+  border-radius: 10px; padding: 14px 20px; margin-bottom: 18px; font-size: 14px; line-height: 1.6; }
+.exec h2, .section h2 { margin: 0 0 6px; font-size: 14px; color: var(--ant-orange); }
 .host-card { background: var(--panel); border: 1px solid var(--border);
   border-radius: 12px; margin-bottom: 18px; overflow: hidden; }
 .host-header { display: flex; justify-content: space-between; align-items: center;
@@ -39,6 +43,8 @@ header p { margin: 4px 0 0; color: var(--text-dim); font-size: 13px; }
 .badge.os { background: rgba(255,140,0,.12); color: var(--ant-orange);
   border: 1px solid var(--ant-orange-dim); }
 .host-meta { font-size: 12px; color: var(--text-dim); }
+.evidence { list-style: none; margin: 0; padding: 10px 20px; border-bottom: 1px solid var(--border);
+  color: var(--text-dim); font-size: 11px; font-family: monospace; direction: ltr; text-align: left; }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: start; padding: 10px 20px; font-size: 13px; }
@@ -50,10 +56,12 @@ tr:last-child td { border-bottom: none; }
   word-break: break-all; direction: ltr; unicode-bidi: isolate; text-align: left; }
 .empty { padding: 16px 20px; color: var(--text-dim); font-size: 13px; }
 .stat.warn .num { color: #ff5d8f; }
-.product small { display: block; color: var(--text-dim); font-size: 11px; margin-top: 2px; }
+.product small, .conf { display: block; color: var(--text-dim); font-size: 11px; margin-top: 2px; }
 .findings { list-style: none; margin: 0; padding: 14px 20px 16px; border-top: 1px solid var(--border);
-  display: grid; gap: 8px; }
-.findings li { display: flex; gap: 12px; align-items: baseline; font-size: 13px; }
+  display: grid; gap: 12px; }
+.findings li { display: grid; grid-template-columns: 78px 1fr; gap: 12px; align-items: start; font-size: 13px; }
+.findings .why, .findings .fix, .findings .ev { color: var(--text-dim); font-size: 12px; margin-top: 3px; }
+.findings .ev { font-family: monospace; direction: ltr; unicode-bidi: isolate; text-align: left; word-break: break-all; }
 .sev { flex: none; min-width: 70px; text-align: center; padding: 2px 8px; border-radius: 6px;
   font-size: 11px; font-weight: 700; }
 .sev-high .sev { background: rgba(255,93,143,.18); color: #ff5d8f; border: 1px solid rgba(255,93,143,.5); }
@@ -61,6 +69,10 @@ tr:last-child td { border-bottom: none; }
 .sev-low .sev { background: rgba(76,194,255,.14); color: #4cc2ff; border: 1px solid rgba(76,194,255,.45); }
 .sev-info .sev { background: rgba(143,160,196,.14); color: #8fa0c4; border: 1px solid rgba(143,160,196,.4); }
 .sev-info { color: var(--text-dim); }
+.section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 20px; margin-bottom: 18px;
+  font-size: 13px; }
+.section ul { margin: 6px 0 0; padding-inline-start: 20px; color: var(--text-dim); }
+.section code { font-family: monospace; direction: ltr; unicode-bidi: isolate; }
 footer { text-align: center; color: var(--text-dim); font-size: 12px; padding: 30px; }
 </style>
 </head>
@@ -69,23 +81,24 @@ footer { text-align: center; color: var(--text-dim); font-size: 12px; padding: 3
   <div class="icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Nemla"><defs><linearGradient id="nm-embera" x1="60" y1="20" x2="200" y2="228" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFC46B"/><stop offset=".5" stop-color="#FF7A1A"/><stop offset="1" stop-color="#E8460C"/></linearGradient></defs><g fill="url(#nm-embera)"><ellipse cx="128" cy="62" rx="19" ry="17"/><ellipse cx="128" cy="109" rx="16" ry="23"/><path d="M128 138c22 0 34 20 34 40 0 24-14 42-34 46-20-4-34-22-34-46 0-20 12-40 34-40z"/><circle cx="58" cy="104" r="7"/><circle cx="48" cy="144" r="7"/><circle cx="64" cy="190" r="7"/><circle cx="198" cy="104" r="7"/><circle cx="208" cy="144" r="7"/><circle cx="192" cy="190" r="7"/><circle cx="82" cy="24" r="6"/><circle cx="174" cy="24" r="6"/></g><g fill="none" stroke="url(#nm-embera)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M114 98 80 80 58 104M112 110 72 114 48 144M114 124 80 148 64 190"/><path d="M142 98 176 80 198 104M144 110 184 114 208 144M142 124 176 148 192 190"/><path d="M119 50 102 28 82 24M137 50 154 28 174 24" stroke-width="5.5"/></g></svg></div>
   <div>
     <h1>Nemla Recon Report</h1>
-    <p>Target: <bdi>127.0.0.1</bdi> &nbsp;|&nbsp; Scan date: <bdi>2026-09-21 02:23:51</bdi> &nbsp;|&nbsp; Duration: <bdi>0.5s</bdi></p>
+    <p>Target: <bdi>127.0.0.1</bdi> &nbsp;|&nbsp; Scan date: <bdi>2026-09-21 12:24:18</bdi> &nbsp;|&nbsp; Duration: <bdi>0.6s</bdi></p>
   </div>
 </header>
 <div class="summary">
   <div class="stat"><div class="num">1</div><div class="label">Hosts discovered</div></div>
-  <div class="stat"><div class="num">6</div><div class="label">Open ports</div></div>
-  <div class="stat"><div class="num">6</div><div class="label">Ports scanned per host</div></div>
-  <div class="stat "><div class="num">2</div><div class="label">Findings</div></div>
+  <div class="stat"><div class="num">5</div><div class="label">Open ports</div></div>
+  <div class="stat"><div class="num">5</div><div class="label">Ports scanned per host</div></div>
+  <div class="stat warn"><div class="num">4</div><div class="label">Findings</div></div>
 </div>
 <div class="container">
-<div class="host-card"><div class="host-header"><div><span class="host-ip">127.0.0.1</span><span class="badge up">Active</span><span class="badge os">Skipped</span></div><div class="host-meta"></div></div><div class="table-wrap"><table><tr><th>Port</th><th>Service</th><th>Product</th><th>Banner</th></tr><tr><td class="port">21</td><td>FTP</td><td class="product">vsftpd 3.0.5</td><td class="banner">220 (vsFTPd 3.0.5)</td></tr>
-<tr><td class="port">22</td><td>SSH</td><td class="product">OpenSSH 9.6p1</td><td class="banner">SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13</td></tr>
-<tr><td class="port">25</td><td>SMTP</td><td class="product">Postfix</td><td class="banner">220 mail.lab.local ESMTP Postfix (Ubuntu)</td></tr>
-<tr><td class="port">80</td><td>HTTP</td><td class="product">nginx 1.24.0<small>Nemla Lab</small></td><td class="banner">HTTP/1.1 200 OK | Server: nginx/1.24.0</td></tr>
-<tr><td class="port">443</td><td>HTTPS</td><td class="product">nginx 1.24.0<small>Nemla Lab | TLSv1.3 lab.nemla.test -&gt; 2027-10-25</small></td><td class="banner">-</td></tr>
-<tr><td class="port">8080</td><td>HTTP-Proxy</td><td class="product">nginx 1.24.0<small>Nemla Lab</small></td><td class="banner">HTTP/1.1 200 OK | Server: nginx/1.24.0</td></tr></table></div><ul class="findings"><li class="sev-medium"><span class="sev">Medium</span><span>FTP is open on port 21: passwords are sent in clear text.</span></li><li class="sev-low"><span class="sev">Low</span><span>The TLS certificate on port 443 is self-signed.</span></li><li class="sev-info"><span class="sev">Info</span><span>vsftpd 3.0.5 on port 21 announces its exact version to anyone who connects.</span></li><li class="sev-info"><span class="sev">Info</span><span>OpenSSH 9.6p1 on port 22 announces its exact version to anyone who connects.</span></li><li class="sev-info"><span class="sev">Info</span><span>nginx 1.24.0 on port 80 announces its exact version to anyone who connects.</span></li><li class="sev-info"><span class="sev">Info</span><span>nginx 1.24.0 on port 443 announces its exact version to anyone who connects.</span></li><li class="sev-info"><span class="sev">Info</span><span>nginx 1.24.0 on port 8080 announces its exact version to anyone who connects.</span></li></ul></div>
+<div class="exec"><h2>Executive summary</h2>1 host(s) on 127.0.0.1: 5 open port(s). Findings: 2 high, 1 medium, 1 low.</div>
+<div class="host-card"><div class="host-header"><div><span class="host-ip">127.0.0.1</span><span class="badge up">Active</span><span class="badge os">Ubuntu Linux (74%)</span></div><div class="host-meta"></div></div><ul class="evidence"><li>TTL 128 (started at 128): Windows</li><li>MySQL on port 56346 names Ubuntu Linux</li><li>SSH on port 56342 names Ubuntu Linux</li><li>Redis on port 56344 names Linux</li></ul><div class="table-wrap"><table><tr><th>Port</th><th>Service</th><th>Product</th><th>Confidence</th><th>Banner</th></tr><tr><td class="port">56342/tcp</td><td>SSH</td><td class="product">OpenSSH 9.6p1</td><td>95%</td><td class="banner">SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13</td></tr>
+<tr><td class="port">56343/tcp</td><td>HTTP</td><td class="product">nginx 1.24.0<small>Jenkins</small></td><td>95%</td><td class="banner">HTTP/1.0 200 OK | Server: nginx/1.24.0</td></tr>
+<tr><td class="port">56344/tcp</td><td>Redis</td><td class="product">Redis 7.0.11</td><td>95%</td><td class="banner">+PONG</td></tr>
+<tr><td class="port">56345/tcp</td><td>Telnet</td><td class="product">-</td><td>85%</td><td class="banner">login:</td></tr>
+<tr><td class="port">56346/tcp</td><td>MySQL</td><td class="product">MySQL 8.0.35</td><td>95%</td><td class="banner">MySQL 8.0.35</td></tr></table></div><ul class="findings"><li class="sev-high"><span class="sev">High</span><div>Redis answers without a password on port 56344.<div class="why">Anyone who can connect can read and change every key, and often run commands on the host.</div><div class="fix"><b>How to fix:</b> Set requirepass or ACLs, bind to localhost and firewall the port.</div><div class="ev">Evidence: PING answered +PONG without a password (Confidence 95%)</div></div></li><li class="sev-high"><span class="sev">High</span><div>Telnet is open on port 56345: logins and data travel in clear text.<div class="why">Telnet sends the login and everything typed in clear text, so anyone on the path can read passwords.</div><div class="fix"><b>How to fix:</b> Disable Telnet and use SSH instead.</div><div class="ev">Evidence: login: (Confidence 85%)</div></div></li><li class="sev-medium"><span class="sev">Medium</span><div>A database is reachable over the network: MySQL on port 56346.<div class="why">Databases should normally only be reachable from the application servers that use them.</div><div class="fix"><b>How to fix:</b> Bind it to localhost or a private interface and firewall the port.</div><div class="ev">Evidence: handshake v10, server MySQL 8.0.35 (Confidence 95%)</div></div></li><li class="sev-low"><span class="sev">Low</span><div>An administration console (Jenkins) is reachable on port 56343.<div class="why">Administration consoles are prime targets for password guessing and known exploits.</div><div class="fix"><b>How to fix:</b> Restrict it to a management network or VPN and require strong authentication.</div><div class="ev">Evidence: response header x-jenkins (Confidence 75%)</div></div></li><li class="sev-info"><span class="sev">Info</span><div>OpenSSH 9.6p1 on port 56342 announces its exact version to anyone who connects.<div class="ev">Evidence: OpenSSH 9.6p1 (Confidence 95%)</div></div></li><li class="sev-info"><span class="sev">Info</span><div>nginx 1.24.0 on port 56343 announces its exact version to anyone who connects.<div class="ev">Evidence: nginx 1.24.0 (Confidence 95%)</div></div></li><li class="sev-info"><span class="sev">Info</span><div>Redis 7.0.11 on port 56344 announces its exact version to anyone who connects.<div class="ev">Evidence: Redis 7.0.11 (Confidence 95%)</div></div></li><li class="sev-info"><span class="sev">Info</span><div>MySQL 8.0.35 on port 56346 announces its exact version to anyone who connects.<div class="ev">Evidence: MySQL 8.0.35 (Confidence 95%)</div></div></li></ul></div>
+<div class="section"><h2>Warnings and errors</h2><ul><li>No warnings.</li></ul></div>
 </div>
-<footer><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Nemla"><defs><linearGradient id="nm-emberb" x1="60" y1="20" x2="200" y2="228" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFC46B"/><stop offset=".5" stop-color="#FF7A1A"/><stop offset="1" stop-color="#E8460C"/></linearGradient></defs><g fill="url(#nm-emberb)"><ellipse cx="128" cy="62" rx="19" ry="17"/><ellipse cx="128" cy="109" rx="16" ry="23"/><path d="M128 138c22 0 34 20 34 40 0 24-14 42-34 46-20-4-34-22-34-46 0-20 12-40 34-40z"/><circle cx="58" cy="104" r="7"/><circle cx="48" cy="144" r="7"/><circle cx="64" cy="190" r="7"/><circle cx="198" cy="104" r="7"/><circle cx="208" cy="144" r="7"/><circle cx="192" cy="190" r="7"/><circle cx="82" cy="24" r="6"/><circle cx="174" cy="24" r="6"/></g><g fill="none" stroke="url(#nm-emberb)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M114 98 80 80 58 104M112 110 72 114 48 144M114 124 80 148 64 190"/><path d="M142 98 176 80 198 104M144 110 184 114 208 144M142 124 176 148 192 190"/><path d="M119 50 102 28 82 24M137 50 154 28 174 24" stroke-width="5.5"/></g></svg> Generated by Nemla v1.2.0 - responsible use only, on networks you are authorized to scan</footer>
+<footer><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Nemla"><defs><linearGradient id="nm-emberb" x1="60" y1="20" x2="200" y2="228" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFC46B"/><stop offset=".5" stop-color="#FF7A1A"/><stop offset="1" stop-color="#E8460C"/></linearGradient></defs><g fill="url(#nm-emberb)"><ellipse cx="128" cy="62" rx="19" ry="17"/><ellipse cx="128" cy="109" rx="16" ry="23"/><path d="M128 138c22 0 34 20 34 40 0 24-14 42-34 46-20-4-34-22-34-46 0-20 12-40 34-40z"/><circle cx="58" cy="104" r="7"/><circle cx="48" cy="144" r="7"/><circle cx="64" cy="190" r="7"/><circle cx="198" cy="104" r="7"/><circle cx="208" cy="144" r="7"/><circle cx="192" cy="190" r="7"/><circle cx="82" cy="24" r="6"/><circle cx="174" cy="24" r="6"/></g><g fill="none" stroke="url(#nm-emberb)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M114 98 80 80 58 104M112 110 72 114 48 144M114 124 80 148 64 190"/><path d="M142 98 176 80 198 104M144 110 184 114 208 144M142 124 176 148 192 190"/><path d="M119 50 102 28 82 24M137 50 154 28 174 24" stroke-width="5.5"/></g></svg> Generated by Nemla v2.0.0 - responsible use only, on networks you are authorized to scan</footer>
 </body>
 </html>

@@ -193,9 +193,6 @@
       'guard.t.new_device': 'New device on the network: {ip} ({mac}). It was not in the trusted list.',
       'guard.t.new_device_vendor': ' It looks like a {vendor} device.',
       'guard.t.new_device_local': ' This is a locally administered address, used by virtual machines, containers and phones with a private Wi-Fi address, so no maker can be named.',
-      'guard.t.arp_change': '{ip} now answers from {new_mac} instead of {old_mac}. This can be a sign of ARP spoofing.',
-      'guard.t.arp_gateway': 'The gateway {ip} changed from {old_mac} to {new_mac}. This is a classic sign of ARP spoofing.',
-      'guard.t.arp_dup': '{mac} answers for several addresses including the gateway {ip}: {ips}.',
       'guard.t.baseline': 'Learned {devices} device(s) as the trusted baseline.',
       'guard.n.tripwire': 'Find this address in your router\'s list of connected devices. If you do not recognise it, disconnect it and change the Wi-Fi password.',
       'guard.n.new_device': 'If you recognise it, press Trust. If not, remove it from your router and change the Wi-Fi password.',
@@ -212,7 +209,7 @@
     },
 
     ar: {
-      'app.tagline': 'اكتشاف · فحص · تخمين · تقرير',
+      'app.tagline': 'اكتشاف · فحص · بصمة · تقرير',
       'brand.local': 'نملة',
       'lang.menu': 'اللغة',
 
@@ -398,9 +395,6 @@
       'guard.t.new_device': 'جهاز جديد على الشبكة: {ip} ({mac}). ما كان بقائمة الأجهزة الموثوقة.',
       'guard.t.new_device_vendor': ' شكله جهاز {vendor}.',
       'guard.t.new_device_local': ' هاد عنوان معيَّن محلياً، بتستخدمه الأجهزة الافتراضية والحاويات والجوالات اللي عندها عنوان Wi-Fi خاص، فما بنقدر نسمّي الشركة المصنّعة.',
-      'guard.t.arp_change': '{ip} صار يردّ من {new_mac} بدل {old_mac}. ممكن يكون انتحال ARP.',
-      'guard.t.arp_gateway': 'بوابة الشبكة {ip} تغيّرت من {old_mac} إلى {new_mac}. هاي علامة كلاسيكية على انتحال ARP.',
-      'guard.t.arp_dup': '{mac} بيردّ عن عدة عناوين منها البوابة {ip}: {ips}.',
       'guard.t.baseline': 'تعلّمنا {devices} جهاز كقائمة موثوقة.',
       'guard.n.tripwire': 'دوّر على هالعنوان بقائمة الأجهزة المتصلة بالراوتر. إذا ما بتعرفه، افصله وغيّر كلمة سر الواي فاي.',
       'guard.n.new_device': 'إذا بتعرفه اضغط «اعتبار الجهاز موثوقاً». إذا لا، شيله من الراوتر وغيّر كلمة سر الواي فاي.',
@@ -603,9 +597,6 @@
       'guard.t.new_device': 'מכשיר חדש ברשת: {ip} ({mac}). הוא לא היה ברשימת המכשירים המהימנים.',
       'guard.t.new_device_vendor': ' נראה כמו מכשיר של {vendor}.',
       'guard.t.new_device_local': ' זו כתובת שהוגדרה מקומית, בה משתמשים מכונות וירטואליות, קונטיינרים וטלפונים עם כתובת Wi-Fi פרטית, ולכן אי אפשר לנקוב ביצרן.',
-      'guard.t.arp_change': '{ip} עונה כעת מ-{new_mac} במקום {old_mac}. זה עשוי להעיד על התחזות ARP.',
-      'guard.t.arp_gateway': 'שער הרשת {ip} השתנה מ-{old_mac} ל-{new_mac}. זה סימן קלאסי להתחזות ARP.',
-      'guard.t.arp_dup': '{mac} עונה עבור כמה כתובות, כולל שער הרשת {ip}: {ips}.',
       'guard.t.baseline': 'נלמדו {devices} מכשירים כקו בסיס מהימן.',
       'guard.n.tripwire': 'חפשו את הכתובת הזו ברשימת המכשירים המחוברים בראוטר. אם אינכם מזהים אותה, נתקו אותה והחליפו את סיסמת ה-Wi-Fi.',
       'guard.n.new_device': 'אם אתם מזהים אותו, לחצו "סמוך על המכשיר". אם לא, הסירו אותו מהראוטר והחליפו את סיסמת ה-Wi-Fi.',
@@ -622,12 +613,130 @@
     }
   };
 
+  // Nemla 2: history, confidence, evidence and the softer wording of ARP alerts
+  Object.assign(STRINGS.en, {
+      'tab.history': 'History',
+      'history.title': 'Saved scans',
+      'history.empty': 'Finished scans are saved here, so you can open them again and compare.',
+      'history.open': 'Open',
+      'history.hosts': '{n} hosts',
+      'history.ports': '{n} open ports',
+      'history.loaded': 'Opened a saved scan from {time}',
+      'history.failed': 'Could not open that scan.',
+      'history.refresh': 'Refresh',
+      'scan.opt.udp': 'Also probe common UDP ports (DNS, NTP, SNMP...)',
+      'insp.os.conf': '{n}% confidence',
+      'insp.est': 'estimated',
+      'insp.os.why': 'Why this guess',
+      'insp.evidence': 'Evidence',
+      'insp.fix': 'How to fix',
+      'insp.more': 'Details',
+      'insp.conf': '{n}% sure',
+      'insp.udp.unconfirmed': 'UDP ports that did not answer (open|filtered): {ports}',
+      'export.md': 'Markdown report',
+      'export.sarif': 'SARIF (security dashboards)',
+      'guard.conf.low': 'low confidence',
+      'guard.conf.medium': 'medium confidence',
+      'guard.conf.high': 'high confidence',
+      'guard.evidence': 'Evidence',
+      'guard.t.arp_change': '{ip} now answers from {new_mac} instead of {old_mac}. This can be ARP spoofing, but it is also what a replaced network card, a DHCP change or a virtual machine looks like.',
+      'guard.t.arp_gateway': 'The gateway {ip} now answers from {new_mac} instead of {old_mac}. This is a possible sign of ARP spoofing; check whether the router was replaced or restarted.',
+      'guard.t.arp_dup': '{mac} answers for several addresses including the gateway {ip}: {ips}. This can be ARP spoofing, or a router doing proxy ARP.',
+      'guard.k.guard_notice': 'Guard notice',
+      'guard.t.notice.no_network': 'No local network was found, so only the decoy ports are watched (there is no ARP monitoring).',
+      'guard.t.notice.neighbor_table_unreadable': 'The ARP table cannot be read on this system, so new devices and address changes cannot be seen. The decoy ports still work.',
+      'guard.t.notice.sweep_failed': 'A network check failed. The Guard keeps trying, and the decoy ports are not affected.',
+      'guard.t.notice.sweep_empty': 'The last {count} network checks found no device at all. The ARP table may be unreadable here, or the network is unreachable.',
+      'guard.t.notice.bad_entries': '{count} unreadable entries in the ARP table were ignored.'
+    });
+  Object.assign(STRINGS.ar, {
+      'tab.history': 'السجل',
+      'history.title': 'الفحوصات المحفوظة',
+      'history.empty': 'الفحوصات المنتهية بتنحفظ هون، فتقدر تفتحها من جديد وتقارن.',
+      'history.open': 'فتح',
+      'history.hosts': '{n} جهاز',
+      'history.ports': '{n} منفذ مفتوح',
+      'history.loaded': 'فتحت فحصاً محفوظاً من {time}',
+      'history.failed': 'ما قدرت أفتح هاد الفحص.',
+      'history.refresh': 'تحديث',
+      'scan.opt.udp': 'افحص كمان منافذ UDP الشائعة (DNS وNTP وSNMP...)',
+      'insp.os.conf': 'ثقة {n}%',
+      'insp.est': 'تقديري',
+      'insp.os.why': 'ليش هالتخمين',
+      'insp.evidence': 'الدليل',
+      'insp.fix': 'طريقة الإصلاح',
+      'insp.more': 'تفاصيل',
+      'insp.conf': 'متأكد {n}%',
+      'insp.udp.unconfirmed': 'منافذ UDP اللي ما ردّت (open|filtered): {ports}',
+      'export.md': 'تقرير Markdown',
+      'export.sarif': 'SARIF (لوحات الأمان)',
+      'guard.conf.low': 'ثقة منخفضة',
+      'guard.conf.medium': 'ثقة متوسطة',
+      'guard.conf.high': 'ثقة عالية',
+      'guard.evidence': 'الدليل',
+      'guard.t.arp_change': '{ip} صار يردّ من {new_mac} بدل {old_mac}. ممكن يكون انتحال ARP، بس هيك كمان بيبان لما يتبدّل كرت الشبكة أو يتغيّر DHCP أو يكون جهاز افتراضي.',
+      'guard.t.arp_gateway': 'بوابة الشبكة {ip} صارت تردّ من {new_mac} بدل {old_mac}. هاي علامة محتملة على انتحال ARP؛ تأكد إذا الراوتر انبدّل أو انعمله إعادة تشغيل.',
+      'guard.t.arp_dup': '{mac} بيردّ عن عدة عناوين منها البوابة {ip}: {ips}. ممكن يكون انتحال ARP، أو راوتر شغّال بـ proxy ARP.',
+      'guard.k.guard_notice': 'ملاحظة من الحراسة',
+      'guard.t.notice.no_network': 'ما لقينا شبكة محلية، فعم نراقب منافذ الطُّعم بس (ما في مراقبة ARP).',
+      'guard.t.notice.neighbor_table_unreadable': 'ما قدرنا نقرأ جدول ARP على هالنظام، فما منقدر نشوف الأجهزة الجديدة أو تغيّر العناوين. منافذ الطُّعم بتضل شغّالة.',
+      'guard.t.notice.sweep_failed': 'فشل أحد فحوصات الشبكة. الحراسة بتضل تحاول، ومنافذ الطُّعم ما تأثرت.',
+      'guard.t.notice.sweep_empty': 'آخر {count} فحوصات للشبكة ما لقت ولا جهاز. ممكن جدول ARP مش مقروء هون، أو الشبكة مش متاحة.',
+      'guard.t.notice.bad_entries': 'تم تجاهل {count} إدخال غير صالح بجدول ARP.'
+    });
+  Object.assign(STRINGS.he, {
+      'tab.history': 'היסטוריה',
+      'history.title': 'סריקות שמורות',
+      'history.empty': 'סריקות שהסתיימו נשמרות כאן, וכך אפשר לפתוח אותן שוב ולהשוות.',
+      'history.open': 'פתיחה',
+      'history.hosts': '{n} מכשירים',
+      'history.ports': '{n} פורטים פתוחים',
+      'history.loaded': 'נפתחה סריקה שמורה מ-{time}',
+      'history.failed': 'לא ניתן לפתוח את הסריקה הזו.',
+      'history.refresh': 'רענון',
+      'scan.opt.udp': 'לסרוק גם פורטי UDP נפוצים (DNS, NTP, SNMP...)',
+      'insp.os.conf': 'ביטחון {n}%',
+      'insp.est': 'משוער',
+      'insp.os.why': 'למה הניחוש הזה',
+      'insp.evidence': 'ראיה',
+      'insp.fix': 'איך לתקן',
+      'insp.more': 'פרטים',
+      'insp.conf': 'בטוח ב-{n}%',
+      'insp.udp.unconfirmed': 'פורטי UDP שלא ענו (open|filtered): {ports}',
+      'export.md': 'דוח Markdown',
+      'export.sarif': 'SARIF (לוחות בקרת אבטחה)',
+      'guard.conf.low': 'רמת ביטחון נמוכה',
+      'guard.conf.medium': 'רמת ביטחון בינונית',
+      'guard.conf.high': 'רמת ביטחון גבוהה',
+      'guard.evidence': 'ראיה',
+      'guard.t.arp_change': '{ip} עונה כעת מ-{new_mac} במקום {old_mac}. זה עשוי להיות התחזות ARP, אבל כך נראים גם החלפת כרטיס רשת, שינוי DHCP או מכונה וירטואלית.',
+      'guard.t.arp_gateway': 'שער הרשת {ip} עונה כעת מ-{new_mac} במקום {old_mac}. זה סימן אפשרי להתחזות ARP; בדקו אם הראוטר הוחלף או הופעל מחדש.',
+      'guard.t.arp_dup': '{mac} עונה עבור כמה כתובות, כולל שער הרשת {ip}: {ips}. זה עשוי להיות התחזות ARP, או ראוטר שעושה proxy ARP.',
+      'guard.k.guard_notice': 'הערה ממצב השמירה',
+      'guard.t.notice.no_network': 'לא נמצאה רשת מקומית, ולכן רק פורטי הפיתיון מנוטרים (אין ניטור ARP).',
+      'guard.t.notice.neighbor_table_unreadable': 'לא ניתן לקרוא את טבלת ה-ARP במערכת הזו, ולכן אי אפשר לראות מכשירים חדשים או שינויי כתובת. פורטי הפיתיון ממשיכים לעבוד.',
+      'guard.t.notice.sweep_failed': 'אחת מבדיקות הרשת נכשלה. מצב השמירה ממשיך לנסות, ופורטי הפיתיון אינם מושפעים.',
+      'guard.t.notice.sweep_empty': '{count} בדיקות הרשת האחרונות לא מצאו אף מכשיר. ייתכן שטבלת ה-ARP אינה קריאה כאן, או שהרשת אינה זמינה.',
+      'guard.t.notice.bad_entries': 'התעלמנו מ-{count} רשומות לא תקינות בטבלת ה-ARP.'
+    });
+
   let lang = 'en';
 
   function t(key, vars) {
     let text = (STRINGS[lang] && STRINGS[lang][key]) || STRINGS.en[key] || key;
     if (vars) text = text.replace(/\{(\w+)\}/g, (m, k) => (k in vars && vars[k] != null ? vars[k] : m));
     return text;
+  }
+
+  function has(key) {
+    return !!((STRINGS[lang] && STRINGS[lang][key]) || STRINGS.en[key]);
+  }
+
+  // texts that only the server knows (finding titles, why they matter, how to fix them)
+  function extend(dictionaries) {
+    Object.keys(dictionaries || {}).forEach((code) => {
+      if (STRINGS[code]) Object.assign(STRINGS[code], dictionaries[code]);
+    });
   }
 
   function apply(root) {
@@ -663,7 +772,7 @@
   }
 
   window.NemlaI18n = {
-    t, apply, setLang, detect, names: NAMES, codes: Object.keys(STRINGS),
+    t, has, extend, apply, setLang, detect, names: NAMES, codes: Object.keys(STRINGS),
     get lang() { return lang; }
   };
 })();

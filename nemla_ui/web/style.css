@@ -26,8 +26,12 @@
   --font-ui: "Inter", "Segoe UI", "Noto Sans", "Cantarell", "Noto Sans Arabic", "Noto Kufi Arabic", "Cairo", "Noto Sans Hebrew", "Heebo", "Arial Hebrew", "Tahoma", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "DejaVu Sans Mono", ui-monospace, "SF Mono", Consolas, monospace;
   --radius: 20px;
-  --il: 0px;
+  --il: 0px;                      /* room taken on the left / right by the panels (set by app.js, in pixels) */
   --ir: 0px;
+  --hud-l: 0px;                   /* the same, plus the colour legend: the HUD never goes under it */
+  --hud-r: 0px;
+  --hud-h: 72px;                  /* the HUD's real height (it wraps into two rows on narrow screens) */
+  --hud-b: 130px;                 /* where the HUD ends on a phone, where it sits at the top (measured by app.js) */
   color-scheme: dark;
 }
 
@@ -311,16 +315,20 @@ details.adv[open] summary svg { transform: rotate(180deg); }
 
 /* ---------- HUD ---------- */
 .hud {
-  position: absolute; bottom: 22px; inset-inline: var(--il) var(--ir); margin-inline: auto; width: max-content; max-width: calc(100% - var(--il) - var(--ir) - 24px);
-  display: flex; align-items: center; gap: 18px; padding: 12px 16px; --tz: 10px; border-radius: 22px;
+  /* physical left/right: app.js measures the panels with getBoundingClientRect, which is physical in both directions */
+  position: absolute; bottom: 22px; left: var(--hud-l); right: var(--hud-r); margin-inline: auto;
+  width: min(800px, calc(100% - var(--hud-l) - var(--hud-r) - 24px));   /* one row when it fits, two rows when it does not */
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 18px; padding: 12px 16px; --tz: 10px; border-radius: 22px;
 }
-.hud .stat { min-width: 84px; padding-inline: 8px; border-inline-end: 1px solid var(--line); }
+.hud .stats { display: flex; flex: 0 1 auto; min-width: 0; }
+.hud .stat { flex: 1 1 auto; min-width: 72px; padding-inline: 8px; border-inline-end: 1px solid var(--line); }
 .hud .stat:last-of-type { border-inline-end: 0; }
+#btnStop { flex: none; }
 .stat .k { display: block; font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--ink-faint); }
 [dir="rtl"] .stat .k { letter-spacing: 0; }
 .stat b { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; background: var(--grad-ember); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .stat b.hot { background: linear-gradient(135deg, #FFB3CB, #FF5D8F); -webkit-background-clip: text; background-clip: text; }
-.progress { min-width: 240px; max-width: 340px; flex: 1; }
+.progress { flex: 1 1 200px; min-width: 150px; }
 .progress .phase { font-size: 13px; font-weight: 600; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bar { height: 8px; border-radius: 999px; background: rgba(255, 255, 255, .07); overflow: hidden; }
 .bar i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--grad-ember); box-shadow: 0 0 16px rgba(255, 122, 26, .8); transition: width .25s ease-out; position: relative; }
@@ -329,7 +337,7 @@ details.adv[open] summary svg { transform: rotate(180deg); }
 }
 @keyframes shine { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 .demo-badge { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; letter-spacing: 1px; background: var(--violet); color: #14102B; }
-.hint { position: absolute; bottom: 118px; inset-inline: var(--il) var(--ir); text-align: center; color: var(--ink-dim); font-size: 13px; pointer-events: none !important; text-shadow: 0 2px 12px #000; }
+.hint { position: absolute; bottom: calc(var(--hud-h) + 46px); left: var(--hud-l); right: var(--hud-r); text-align: center; color: var(--ink-dim); font-size: 13px; pointer-events: none !important; text-shadow: 0 2px 12px #000; }
 .hint span { display: inline-block; padding: 6px 14px; border-radius: 999px; background: rgba(8, 10, 14, .5); border: 1px solid var(--line); }
 
 /* legend */
@@ -480,15 +488,66 @@ dialog#consent p { color: var(--ink-dim); margin: 0 0 18px; }
   .brand-ar { display: none; }
   .dock { inset-inline: 12px; top: auto; bottom: 12px; width: auto; height: 46vh; --tz: 0px; }
   .inspector { inset-inline: 12px; top: auto; bottom: 12px; width: auto; max-height: 46vh; }
-  .hud { bottom: auto; top: 72px; gap: 10px; padding: 8px 12px; inset-inline: 12px; max-width: none; width: auto; margin: 0; }
+  .hud { bottom: auto; top: 72px; gap: 8px 10px; padding: 8px 12px; left: 12px; right: 12px; max-width: none; width: auto; margin: 0; }
+  .hud .stats { flex: 1 1 100%; }
+  .hud .stat { min-width: 0; padding-inline: 4px; }
   .hud .stat b { font-size: 20px; }
   .progress { min-width: 0; }
-  .legend, .hint { display: none; }
+  .hint { display: none; }
+  /* the legend stays: a compact row right under the HUD (wherever the HUD ends, on any font) instead of a column in the corner */
+  .legend { inset-inline: 12px; margin-inline: auto; width: max-content; max-width: calc(100% - 24px); top: calc(var(--hud-b) + 8px); bottom: auto;
+    flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 4px 12px; padding: 7px 12px; font-size: 11px; border-radius: 14px; }
   .top-actions .chip { display: none; }
   #btnLabels { display: none; }
+  /* the top bar must fit a phone: the export button keeps its icon and its name for screen readers only */
+  .topbar { padding: 0 12px; gap: 8px; }
+  .top-actions { gap: 6px; }
+  #btnExport > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+
+/* A phone held sideways (at most 480px tall) has no room for the HUD, the panel and a legend between them: the legend
+   is the one thing left out there. It is shown on every other screen, phones upright included. */
+@media (max-width: 900px) and (max-height: 480px) {
+  .legend { display: none; }
+}
+
+@media (max-width: 420px) {
+  .brand-logo { height: 30px; }
+  .hud { padding: 8px 10px; gap: 6px 8px; }
+  .hud .stat { padding-inline: 2px; }
+  .stat .k { font-size: 9px; letter-spacing: 0; }
+  .hud .stat b { font-size: 17px; }
+  .progress .phase { font-size: 12px; margin-bottom: 6px; }
+}
+@media (max-width: 340px) {
+  #langCur { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   .panel { transform: none !important; }
 }
+
+/* Nemla 2: confidence, evidence, history */
+.conf { margin-inline-start: auto; font-size: 11px; font-weight: 700; color: var(--ink-dim); padding: 1px 7px; border-radius: 999px;
+  background: rgba(255, 255, 255, .06); white-space: nowrap; }
+.conf.guess { color: var(--gold); background: rgba(255, 194, 71, .10); }
+.evidence { list-style: none; margin: -6px 0 14px; padding: 8px 12px; border-radius: 12px; background: rgba(255, 255, 255, .03);
+  font-family: var(--font-mono); font-size: 11px; color: var(--ink-dim); display: grid; gap: 4px; direction: ltr; text-align: start; }
+.evidence li::before { content: "› "; color: var(--ember-400); }
+.find-list li { align-items: start; }
+.find-list .fbody { display: grid; gap: 4px; min-width: 0; }
+.find-list details { font-size: 12px; color: var(--ink-dim); }
+.find-list summary { cursor: pointer; color: var(--ember-300); font-weight: 600; }
+.find-list details p { margin: 6px 0 0; }
+.find-list .fev { font-family: var(--font-mono); font-size: 11px; direction: ltr; text-align: start; word-break: break-word; }
+.udp-note { font-size: 12px; color: var(--ink-faint); margin: 8px 2px 0; direction: ltr; text-align: start; }
+.history-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.history-head h2 { margin: 0; font-size: 15px; }
+.history-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.history-list li { padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, .03); border: 1px solid var(--line);
+  display: grid; gap: 4px; cursor: pointer; }
+.history-list li:hover, .history-list li:focus-visible { border-color: var(--ember-500); outline: none; }
+.history-list .target { font-family: var(--font-mono); font-weight: 700; direction: ltr; text-align: start; word-break: break-all; }
+.history-list .when, .history-list .sums { font-size: 12px; color: var(--ink-dim); }
+.history-list .sums b { color: var(--rose); }

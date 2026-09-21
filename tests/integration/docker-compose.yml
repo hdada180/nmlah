@@ -1,0 +1,41 @@
+# Real servers for Nemla's integration tests (tests/integration/README.md). Everything listens on 127.0.0.1 only.
+#
+#   docker compose -f tests/integration/docker-compose.yml up -d --build
+#   NEMLA_INTEGRATION=1 python -m pytest -m integration tests/integration
+#   docker compose -f tests/integration/docker-compose.yml down
+#
+# smb:          Samba, SMB2/3, signing not required (the default)      127.0.0.1:14445
+# smb-signing:  Samba, signing mandatory                               127.0.0.1:14446
+# smb1:         Samba with SMBv1 switched on (never do this for real)  127.0.0.1:14447
+# rdp:          xrdp, negotiate (client and server agree)              127.0.0.1:13389
+# rdp-legacy:   xrdp, standard RDP security only (weak)                127.0.0.1:13390
+# rdp-tls:      xrdp, TLS only (no NLA: xrdp has no CredSSP)           127.0.0.1:13391
+x-lab: &lab
+  build: .
+  restart: "no"
+
+services:
+  smb:
+    <<: *lab
+    command: ["/lab/run-samba.sh", "/lab/smb-default.conf"]
+    ports: ["127.0.0.1:14445:445"]
+  smb-signing:
+    <<: *lab
+    command: ["/lab/run-samba.sh", "/lab/smb-signing.conf"]
+    ports: ["127.0.0.1:14446:445"]
+  smb1:
+    <<: *lab
+    command: ["/lab/run-samba.sh", "/lab/smb-smb1.conf"]
+    ports: ["127.0.0.1:14447:445"]
+  rdp:
+    <<: *lab
+    command: ["/lab/run-xrdp.sh", "negotiate"]
+    ports: ["127.0.0.1:13389:3389"]
+  rdp-legacy:
+    <<: *lab
+    command: ["/lab/run-xrdp.sh", "rdp"]
+    ports: ["127.0.0.1:13390:3389"]
+  rdp-tls:
+    <<: *lab
+    command: ["/lab/run-xrdp.sh", "tls"]
+    ports: ["127.0.0.1:13391:3389"]

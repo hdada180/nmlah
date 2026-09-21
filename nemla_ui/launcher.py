@@ -69,8 +69,9 @@ def _refresh_caches(applications: Path, icons_root: Path) -> None:
                     ["gtk-update-icon-cache", "-f", "-t", str(icons_root)]):
         if shutil.which(command[0]):
             try:
-                subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                               timeout=20)
+                # a fixed tool name (found with shutil.which) and paths this module just created; no shell
+                subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,  # noqa: S603
+                               timeout=20, check=False)
             except (OSError, subprocess.SubprocessError):
                 pass
 

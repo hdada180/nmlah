@@ -15,11 +15,22 @@
   const LINUX = 'Linux / Unix / macOS (TTL=64)', UBUNTU = 'Ubuntu Linux (TTL=64)';
   const WIN = 'Windows (TTL=128)', WIN_RDP = 'Windows (RDP/SMB detected) (TTL=128)', NET = 'Network device (Cisco/Solaris) (TTL=255)';
 
-  const P = (n, banner, extra) => Object.assign({ port: n, service: SERVICES[n] || 'unknown', banner: banner || '' }, extra || {});
+  const P = (n, banner, extra) => {
+    const rec = Object.assign({ port: n, proto: 'tcp', state: 'open', service: SERVICES[n] || 'unknown', banner: banner || '' }, extra || {});
+    if (rec.confidence == null) {   // a product or a TLS handshake is a real identification, the port number alone is a guess
+      const known = !!(rec.product || rec.tls);
+      rec.confidence = known ? 0.95 : 0.3; rec.heuristic = !known;
+      rec.evidence = known ? (banner || 'protocol reply') : 'port number ' + n;
+    }
+    return rec;
+  };
   const OPENSSH = { product: 'OpenSSH', version: '9.6p1', os_hint: 'Ubuntu Linux' };
   const NGX = { product: 'nginx', version: '1.24.0', status: 200 };
   const TLS_OK = { version: 'TLSv1.3', subject: 'app.lab.local', issuer: "Let's Encrypt", not_after: '2027-04-02', days_left: 194, self_signed: false };
-  const F = (id, severity, port, params) => ({ id: id, severity: severity, port: port || null, params: params || {} });
+  const F = (id, severity, port, params) => ({
+    id: id, severity: severity, port: port || null, proto: 'tcp', host: null, params: params || {},
+    confidence: severity === 'info' ? 0.95 : 0.85, evidence: 'observed during the demo scan'
+  });
   const VER = (port, product, version) => F('version', 'info', port, { product: product, version: version });
   // the real scan names the maker of well-known prefixes; the demo mirrors the two it uses
   const vendorOf = (mac) => {
@@ -28,8 +39,19 @@
     if (/^(B827EB|DCA632|D83ADD|E45F01)/.test(hex)) return 'Raspberry Pi Foundation';
     return null;
   };
+  const osGuess = (os, ttl) => {
+    const family = /Windows/.test(os) ? 'windows' : /Network/.test(os) ? 'network' : /Ubuntu|Debian/.test(os) ? 'linux' : 'unix';
+    const named = /Ubuntu|Debian|RDP/.test(os);
+    return {
+      family: family, name: os.replace(/\s*\(TTL=\d+\)/, ''), confidence: named ? 0.72 : 0.3, heuristic: !/Ubuntu|Debian/.test(os),
+      label: named ? 'medium' : 'low',
+      evidence: ['TTL ' + ttl + ' is typical of ' + (family === 'windows' ? 'Windows' : family === 'network' ? 'routers and switches' : 'Unix-like systems')]
+        .concat(named ? [/RDP/.test(os) ? 'RDP and SMB are open' : 'an SSH banner names the distribution'] : [])
+    };
+  };
   const H = (last, os, ports, mac, findings) => ({
-    ip: '192.168.1.' + last, os_guess: os, ttl: /TTL=(\d+)/.test(os) ? +/TTL=(\d+)/.exec(os)[1] : null,
+    ip: '192.168.1.' + last, os_guess: os, os: osGuess(os, /TTL=(\d+)/.test(os) ? +/TTL=(\d+)/.exec(os)[1] : 0),
+    ttl: /TTL=(\d+)/.test(os) ? +/TTL=(\d+)/.exec(os)[1] : null,
     mac: mac || null, vendor: vendorOf(mac), discovery: 'ARP', open_ports: ports, findings: findings || []
   });
 

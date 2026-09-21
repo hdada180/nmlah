@@ -2,19 +2,200 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feature/**"]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.8", "3.10", "3.12"]
+  # ------------------------------------------------------------------ static checks
+  lint:
+    name: lint (ruff, pyflakes)
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip "ruff~=0.16.8" pyflakes
+      - run: python -m ruff check .
+      - run: python -m pyflakes nemla nemla_ui nemla.py tests benchmarks
+
+  typecheck:
+    name: typecheck (mypy)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip "mypy~=2.3.1"
+      # the code base is checked against Python 3.10 typing rules (pyproject: [tool.mypy] python_version);
+      # 3.8 and 3.9 are covered by the test matrix below, which really imports and runs every module.
+      # Each platform is checked on its own: code under `sys.platform` branches only exists for one of them.
+      - run: python -m mypy --platform linux
+      - run: python -m mypy --platform win32
+      - run: python -m mypy --platform darwin
+
+  # ------------------------------------------------------------------ the whole suite on real Linux
+  # Real Chrome is on the runner, so the browser layout tests run too. The integration and privileged tests are
+  # skipped here (their reason is listed in the summary) and run in the two jobs further down.
+  linux:
+    name: linux (python ${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          allow-prereleases: true
+      - name: Environment
+        run: |
+          python -VV
+          uname -srm
+          echo "open files limit: $(ulimit -n)"
+          python - <<'EOF'
+          import socket
+          try:
+              sock = socket.socket(socket.AF_INET6)
+              sock.bind(("::1", 0))
+              print("ipv6 loopback: available")
+          except OSError as exc:
+              print("ipv6 loopback: NOT available:", exc)
+          EOF
+          command -v google-chrome chromium chromium-browser || echo "no chrome on this runner"
       - run: python -m pip install --upgrade pip pytest
-      - run: python -m pytest -q
+      - name: Tests
+        run: python -m pytest -ra -q -p no:cacheprovider --junitxml=junit.xml
+      - name: Summary
+        if: always()
+        run: python .github/scripts/junit_summary.py junit.xml "Linux / Python ${{ matrix.python }}" --min-tests 850
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-linux-${{ matrix.python }}
+          path: junit.xml
+
+  # ------------------------------------------------------------------ and on Windows, where it is used most
+  windows:
+    name: windows (python ${{ matrix.python }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.8", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install --upgrade pip pytest
+      - name: Tests
+        run: python -m pytest -ra -q -p no:cacheprovider --junitxml=junit.xml
+      - name: Summary
+        if: always()
+        run: python .github/scripts/junit_summary.py junit.xml "Windows / Python ${{ matrix.python }}" --min-tests 850
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-windows-${{ matrix.python }}
+          path: junit.xml
+
+  # ------------------------------------------------------------------ raw packets and the Guard against a real kernel
+  privileged:
+    name: privileged (root, Scapy, veth and ARP)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y iproute2 iputils-ping
+      - run: python -m pip install --upgrade pip pytest scapy
+      - name: Tests (as root, in a private network namespace)
+        run: sudo -E env "PATH=$PATH" NEMLA_PRIVILEGED=1 python -m pytest -m privileged tests/test_privileged.py -ra -v -p no:cacheprovider --junitxml=junit.xml
+      - name: Summary
+        if: always()
+        run: python .github/scripts/junit_summary.py junit.xml "Privileged (root + Scapy)" --min-tests 8 --max-skipped 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-privileged
+          path: junit.xml
+
+  # ------------------------------------------------------------------ SMB and RDP against real servers
+  integration:
+    name: integration (real Samba and xrdp)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip pytest
+      - name: Start the lab (three Samba and three xrdp servers, tests/integration/docker-compose.yml)
+        run: docker compose -f tests/integration/docker-compose.yml up -d --build
+      - name: Tests
+        run: NEMLA_INTEGRATION=1 python -m pytest -m integration tests/integration -ra -v -p no:cacheprovider --junitxml=junit.xml
+      - name: Summary
+        if: always()
+        run: python .github/scripts/junit_summary.py junit.xml "Integration (Samba + xrdp)" --min-tests 80 --max-skipped 0
+      - name: What the servers said
+        if: failure()
+        run: |
+          docker compose -f tests/integration/docker-compose.yml ps
+          docker compose -f tests/integration/docker-compose.yml logs --tail 60
+      - name: Stop the lab
+        if: always()
+        run: docker compose -f tests/integration/docker-compose.yml down
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-integration
+          path: junit.xml
+
+  # ------------------------------------------------------------------ speed and limits, measured
+  benchmark:
+    name: benchmark (loopback target)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Ports, 100 to 65,535, and how fast a cancel stops a scan
+        run: |
+          mkdir -p benchmarks/results
+          python -m benchmarks.bench_scan --threads 1000 --json benchmarks/results/ports.json | tee ports.txt
+      - name: Hosts, 10 to 100, some of them broken on purpose
+        run: python -m benchmarks.bench_network --threads 400 --json benchmarks/results/hosts.json | tee hosts.txt
+      - name: Publish the tables and fail on a gross regression
+        run: |
+          { echo "### Port scans"; echo; sed -n '/^| ports/,$p' ports.txt; echo; echo "### Many hosts"; echo; sed -n '/^| hosts/,$p' hosts.txt; } >> "$GITHUB_STEP_SUMMARY"
+          python - <<'EOF'
+          import json
+          ports = json.load(open("benchmarks/results/ports.json"))
+          hosts = json.load(open("benchmarks/results/hosts.json"))
+          biggest = ports["scans"][-1]
+          assert biggest["ports"] == 65535 and biggest["seconds"] < 120, biggest
+          assert biggest["peak_memory_mb"] < 400, biggest
+          for entry in ports["cancel"]:
+              assert entry["cancel_latency_s"] is not None and entry["cancel_latency_s"] < 1.0, entry
+          for run in hosts["runs"]:
+              assert run["healthy_complete"] == run["healthy_expected"] and run["broken_accounted_for"], run
+          print("benchmark limits hold")
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks
+          path: benchmarks/results/

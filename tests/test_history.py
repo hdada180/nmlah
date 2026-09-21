@@ -63,7 +63,7 @@ def test_product_or_version_changes_are_reported_only_when_both_sides_know_them(
     new = [host("10.0.0.5", [port(80, product="nginx", version="1.24.0"), port(22, product="OpenSSH", version="9.6"),
                              port(21, product="vsftpd")])]
     entry = nemla.diff_scans(old, new)["hosts"]["10.0.0.5"]
-    assert entry["changed"] == [{"port": 80, "from": "nginx 1.22.1", "to": "nginx 1.24.0"}]  # 22 gained detail, not a change
+    assert entry["changed"] == [{"port": 80, "from": "nginx 1.22.1", "to": "nginx 1.24.0", "kind": "version"}]  # 22 gained detail, not a change
     assert entry["opened"] == [] and entry["closed"] == []
 
 
@@ -263,7 +263,7 @@ def test_history_diff_needs_real_ids_and_the_token(gui):
 
 
 def test_a_stopped_scan_is_not_saved(gui, lab_port):
-    app, p = gui
+    app, _p = gui
     job = server.Job("x", "127.0.0.1", "en")
     job.meta = {"cancelled": True, "discovered": 1}
     done = {}
@@ -351,7 +351,7 @@ def test_watch_reports_what_changed_between_rounds(lab_port, tmp_path, monkeypat
         if not rounds:
             raise KeyboardInterrupt
 
-    monkeypatch.setattr(nemla, "run_scan", fake_scan)
+    monkeypatch.setattr(nemla.cli, "run_scan", fake_scan)
     monkeypatch.setattr(nemla.time, "sleep", fake_sleep)
     log_file = tmp_path / "changes.jsonl"
     code = nemla.main(["-t", "127.0.0.1", "-p", str(lab_port), "--watch", "10s", "--watch-log", str(log_file),
