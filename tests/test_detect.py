@@ -428,6 +428,40 @@ def test_mac_vendor(mac, expected):
     assert nemla.mac_vendor(mac) == expected
 
 
+# A sample of the vendor table added from the IEEE public OUI registry (nemla/discovery/mac.py): real assignments,
+# picked to cover the categories the table groups them into (networking gear, phones/laptops, smart-home, printers...).
+@pytest.mark.parametrize("mac, expected", [
+    ("F0:EE:7A:11:22:33", "Apple"), ("64:1B:2F:11:22:33", "Samsung"), ("E8:0A:B9:11:22:33", "Cisco"),
+    ("9C:E3:30:11:22:33", "Cisco Meraki"), ("F0:9F:C2:11:22:33", "Ubiquiti"), ("34:F7:16:11:22:33", "TP-Link"),
+    ("D4:8A:FC:11:22:33", "Espressif (ESP32/ESP8266)"), ("84:28:59:11:22:33", "Amazon (Echo/Kindle/Fire)"),
+    ("60:70:6C:11:22:33", "Google"), ("64:16:66:11:22:33", "Nest (Google)"), ("D0:43:1E:11:22:33", "Dell"),
+    ("00:E0:4C:11:22:33", "Realtek"), ("0C:75:D2:11:22:33", "Hikvision")])
+def test_mac_vendor_from_the_ieee_registry_sample(mac, expected):
+    assert nemla.mac_vendor(mac) == expected
+
+
+def test_mac_vendor_prefers_the_longest_matching_prefix(monkeypatch):
+    """When one table entry is a prefix of another, the more specific one wins whatever order they are listed in. The
+    shipped table has no such pair today (see the next test); this pins the lookup rule so adding one later, say a
+    short platform prefix next to a longer vendor block, cannot silently return the less specific name."""
+    from nemla.discovery import mac
+    table = (("AABB", "short platform prefix"), ("AABBCC", "specific vendor block"))       # short one listed first
+    monkeypatch.setattr(mac, "_BY_LENGTH", tuple(sorted(table, key=lambda item: -len(item[0]))))
+    assert nemla.mac_vendor("aa:bb:cc:00:00:01") == "specific vendor block"
+    assert nemla.mac_vendor("aa:bb:dd:00:00:01") == "short platform prefix"
+
+
+def test_the_shipped_vendor_table_has_no_ambiguous_entry():
+    from nemla.discovery.mac import _MAC_PREFIXES
+    prefixes = [p for p, _ in _MAC_PREFIXES]
+    assert len(prefixes) == len(set(prefixes)), "two entries share the exact same prefix: the lookup would be ambiguous"
+    assert all(len(p) % 2 == 0 and p == p.upper() and int(p, 16) >= 0 for p in prefixes), "prefixes are whole octets of hex"
+    for i, shorter in enumerate(prefixes):
+        for longer in prefixes[i + 1:]:
+            a, b = (shorter, longer) if len(shorter) <= len(longer) else (longer, shorter)
+            assert not b.startswith(a), f"{a!r} shadows {b!r}: two different vendors would collide on this address"
+
+
 def test_scan_results_carry_the_vendor(servers, monkeypatch):
     port = servers(lambda conn: conn.close())
     for mac, expected in (("b8:27:eb:11:22:33", "Raspberry Pi Foundation"), ("aa:bb:cc:dd:ee:ff", None)):

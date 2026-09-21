@@ -342,7 +342,7 @@ The tests run entirely against loopback with throw-away servers (TCP, UDP, TLS, 
 
 - [x] JSON and CSV output, English / Arabic / Hebrew, findings and `--fail-on`, Guard, history, `--diff` and `--watch`, 3D interface, Linux launcher
 - [x] Architecture split, plugin detectors, IPv6, UDP, OS fingerprinting with confidence, Markdown and SARIF, bounded scheduler
-- [ ] Full IEEE OUI registry for MAC vendors
+- [ ] Full IEEE OUI registry for MAC vendors (today a curated table of about 70 common vendor and platform prefixes, taken from the IEEE list)
 - [ ] Scan profiles and a config file
 - [ ] Interactive HTML report (sorting, filtering)
 - [ ] IPv6 neighbour discovery on the local link
