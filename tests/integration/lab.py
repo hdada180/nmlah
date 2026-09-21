@@ -26,6 +26,18 @@ def endpoint(name: str) -> tuple:
     return host, int(port)
 
 
+def identification_budget(timeout: float, intensity: int = 5) -> float:
+    """The longest identifying one port may take, in seconds.
+
+    A banner wait, one question per candidate detector, and a TLS attempt each wait out `timeout` when the server stays
+    silent, and Samba and xrdp do exactly that to a question that is not theirs; then a little slack for a slow machine.
+    Going over it means some wait is not bounded by its timeout. (Derived from the detector list: an earlier fixed 10 s
+    was tuned to a shortcut that skipped detectors, and it made RDP and SMB undetectable on non-standard ports.)"""
+    from nemla import fingerprint
+    candidates = len(fingerprint._candidates(54321, intensity, False))         # a port no detector claims, no TLS
+    return (candidates + 3) * timeout + 2.0
+
+
 def wait_open(host: str, port: int, seconds: float = 30.0) -> bool:
     end = time.monotonic() + seconds
     while time.monotonic() < end:

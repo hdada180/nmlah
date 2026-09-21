@@ -59,7 +59,7 @@ def main() -> int:
     shown = 0
     for case in root.iter("testcase"):
         for bad in [*case.findall("failure"), *case.findall("error")]:
-            if shown < 10:                                     # GitHub shows at most ten annotations per step
+            if shown < 9:                                      # GitHub keeps ten errors per step: leave room for the total below
                 text = " ".join((bad.get("message") or bad.text or "").split())[:400]
                 print(annotation(f"{case.get('classname', '')}.{case.get('name', '')}"[-140:], text))
             shown += 1

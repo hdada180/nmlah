@@ -18,7 +18,7 @@ import time
 import pytest
 
 import nemla
-from lab import ChaosProxy, endpoint, wait_open
+from lab import ChaosProxy, endpoint, identification_budget, wait_open
 from nemla.fingerprint import detect_service
 
 pytestmark = pytest.mark.integration
@@ -85,8 +85,8 @@ def test_the_proxy_itself_is_transparent(rdp):
 def test_a_truncated_negotiation_reply_never_crashes_the_detector(rdp, cut):
     with ChaosProxy(rdp, "truncate", cut=cut) as proxy:
         started = time.monotonic()
-        info = detect("127.0.0.1", proxy.port, timeout=1.0)
-    assert time.monotonic() - started < 10
+        info = detect("127.0.0.1", proxy.port, timeout=0.5)
+    assert time.monotonic() - started < identification_budget(0.5)
     assert isinstance(info, dict)
     if info:
         assert info["detected"] == "rdp" and info["details"]["nla"] in ("not required", "required", "unknown")
@@ -95,7 +95,7 @@ def test_a_truncated_negotiation_reply_never_crashes_the_detector(rdp, cut):
 @pytest.mark.parametrize("at", [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 14, 15])
 def test_a_corrupted_byte_never_crashes_the_detector(rdp, at):
     with ChaosProxy(rdp, "flip", at=at) as proxy:
-        info = detect("127.0.0.1", proxy.port, timeout=1.0)
+        info = detect("127.0.0.1", proxy.port, timeout=0.5)
     assert isinstance(info, dict)
     if at in (0, 5):                                         # the TPKT version and the X.224 'connection confirm' code make it RDP
         assert info == {} or info["detected"] == "rdp"
@@ -104,7 +104,7 @@ def test_a_corrupted_byte_never_crashes_the_detector(rdp, at):
 @pytest.mark.parametrize("at", [0, 5, 11, 15])
 def test_garbage_after_a_valid_start_is_never_taken_for_facts_it_cannot_support(rdp, at):
     with ChaosProxy(rdp, "garbage", at=at) as proxy:
-        info = detect("127.0.0.1", proxy.port, timeout=1.0)
+        info = detect("127.0.0.1", proxy.port, timeout=0.5)
     assert isinstance(info, dict)
 
 
@@ -115,7 +115,7 @@ def test_a_server_that_never_answers_costs_a_bounded_time_and_reports_nothing(rd
         started = time.monotonic()
         info = detect("127.0.0.1", proxy.port, timeout=0.5)
         took = time.monotonic() - started
-    assert info == {} and took < 8
+    assert info == {} and took < identification_budget(0.5)
 
 
 def test_a_slow_rdp_server_within_the_timeout_is_still_understood(rdp):

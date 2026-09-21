@@ -13,7 +13,7 @@ import time
 import pytest
 
 import nemla
-from lab import ChaosProxy, endpoint, wait_open
+from lab import ChaosProxy, endpoint, identification_budget, wait_open
 from nemla.fingerprint import detect_service
 
 pytestmark = pytest.mark.integration
@@ -99,8 +99,8 @@ def test_the_proxy_itself_is_transparent(smb):
 def test_a_truncated_answer_never_crashes_the_detector(smb, cut):
     with ChaosProxy(smb, "truncate", cut=cut) as proxy:
         started = time.monotonic()
-        info = detect("127.0.0.1", proxy.port, timeout=1.0)
-    assert time.monotonic() - started < 10
+        info = detect("127.0.0.1", proxy.port, timeout=0.5)
+    assert time.monotonic() - started < identification_budget(0.5)
     assert isinstance(info, dict)
     if info:                                              # if it claims SMB, the claim must be internally consistent
         assert info["detected"] == "smb" and info["details"]["smb1"] in (True, False)
@@ -109,7 +109,7 @@ def test_a_truncated_answer_never_crashes_the_detector(smb, cut):
 @pytest.mark.parametrize("at", [0, 3, 4, 5, 8, 12, 16, 60, 68, 70, 71, 72])
 def test_a_corrupted_byte_never_crashes_the_detector(smb, at):
     with ChaosProxy(smb, "flip", at=at) as proxy:
-        info = detect("127.0.0.1", proxy.port, timeout=1.0)
+        info = detect("127.0.0.1", proxy.port, timeout=0.5)
     assert isinstance(info, dict)
     if at in (4, 5, 6, 7) and info:                       # the protocol id is what makes it SMB: a broken one is not SMB2
         assert "dialect" not in info.get("details", {}) or info["details"]["dialect"]
@@ -118,7 +118,7 @@ def test_a_corrupted_byte_never_crashes_the_detector(smb, at):
 @pytest.mark.parametrize("at", [0, 4, 8, 24, 60, 70])
 def test_garbage_after_a_valid_start_is_not_taken_for_smb_facts(smb, at):
     with ChaosProxy(smb, "garbage", at=at) as proxy:
-        info = detect("127.0.0.1", proxy.port, timeout=1.0)
+        info = detect("127.0.0.1", proxy.port, timeout=0.5)
     assert isinstance(info, dict)
     if info.get("details", {}).get("dialect"):
         assert info["details"]["dialect"] in ("2.0.2", "2.1", "3.0", "3.0.2", "3.1.1", "2.x")
@@ -132,7 +132,7 @@ def test_a_server_that_never_answers_costs_a_bounded_time_and_reports_nothing(sm
         info = detect("127.0.0.1", proxy.port, timeout=0.5)
         took = time.monotonic() - started
     assert info == {}                                        # nothing was learned, nothing was invented
-    assert took < 8                                          # a handful of probes at 0.5 s, not a hang
+    assert took < identification_budget(0.5)                 # every detector waited out its timeout, and none longer
 
 
 def test_a_slow_smb_server_within_the_timeout_is_still_understood(smb):
