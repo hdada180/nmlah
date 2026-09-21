@@ -186,7 +186,7 @@ def test_scan_validation(ui):
     good = {"target": "127.0.0.1", "profile": "custom", "ports": "80", "authorized": True}
     assert call(port, "/api/scan", "POST", app.token, {**good, "authorized": False})[0] == 403
     assert call(port, "/api/scan", "POST", app.token, {**good, "target": ""})[0] == 400
-    assert call(port, "/api/scan", "POST", app.token, {**good, "target": "::1"})[0] == 400
+    assert call(port, "/api/scan", "POST", app.token, {**good, "target": "not a target!"})[0] == 400
     assert call(port, "/api/scan", "POST", app.token, {**good, "target": "10.0.0.0/8"})[0] == 400
     assert call(port, "/api/scan", "POST", app.token, {**good, "ports": "abc"})[0] == 400
     assert call(port, "/api/scan", "POST", app.token, {**good, "threads": "many"})[0] == 400

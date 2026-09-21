@@ -65,17 +65,6 @@ def servers():
         srv.close()
 
 
-def redirect(monkeypatch, wanted, actual):
-    """Make connections to `wanted` (a well-known port) reach `actual` instead."""
-    real = socket.create_connection
-
-    def fake(address, *args, **kwargs):
-        host, port = address
-        return real((host, actual if port == wanted else port), *args, **kwargs)
-
-    monkeypatch.setattr(nemla.socket, "create_connection", fake)
-
-
 def host_with(ip, *ports):
     return {"ip": ip, "open_ports": [
         {"port": p, "service": nemla.service_name(p), "banner": "", **extra} for p, extra in ports]}
@@ -201,7 +190,7 @@ def test_tls_probe_on_a_plain_port_returns_nothing(servers):
     assert nemla.tls_probe("127.0.0.1", port, timeout=0.5) == (None, {})
 
 
-def test_redis_probe_reports_auth_state(servers, monkeypatch):
+def test_redis_probe_reports_auth_state(servers):
     def redis_open(conn):
         data = conn.recv(1024)
         if data.startswith(b"PING"):
@@ -215,34 +204,31 @@ def test_redis_probe_reports_auth_state(servers, monkeypatch):
         conn.sendall(b"-NOAUTH Authentication required.\r\n")
         conn.close()
 
-    redirect(monkeypatch, 6379, servers(redis_open))
-    res = nemla.detect_service("127.0.0.1", 6379, b"", "", 1.0)
+    res = nemla.detect_service("127.0.0.1", servers(redis_open), b"", "", 1.0)
     assert (res["product"], res["version"], res["auth"]) == ("Redis", "7.0.11", "none")
+    assert res["detected"] == "redis" and res["heuristic"] is False and res["confidence"] >= 0.9
 
-    redirect(monkeypatch, 6379, servers(redis_locked))
-    res = nemla.detect_service("127.0.0.1", 6379, b"", "", 1.0)
+    res = nemla.detect_service("127.0.0.1", servers(redis_locked), b"", "", 1.0)
     assert (res["product"], res["auth"]) == ("Redis", "required")
 
 
-def test_memcached_probe(servers, monkeypatch):
+def test_memcached_probe(servers):
     def memcached(conn):
         if conn.recv(64).startswith(b"version"):
             conn.sendall(b"VERSION 1.6.21\r\n")
         conn.close()
 
-    redirect(monkeypatch, 11211, servers(memcached))
-    res = nemla.detect_service("127.0.0.1", 11211, b"", "", 1.0)
+    res = nemla.detect_service("127.0.0.1", servers(memcached), b"", "", 1.0)
     assert (res["product"], res["version"], res["auth"]) == ("Memcached", "1.6.21", "none")
 
 
-def test_postgres_probe(servers, monkeypatch):
+def test_postgres_probe(servers):
     def postgres(conn):
         conn.recv(8)
         conn.sendall(b"N")
         conn.close()
 
-    redirect(monkeypatch, 5432, servers(postgres))
-    assert nemla.detect_service("127.0.0.1", 5432, b"", "", 1.0)["product"] == "PostgreSQL"
+    assert nemla.detect_service("127.0.0.1", servers(postgres), b"", "", 1.0)["product"] == "PostgreSQL"
 
 
 def test_no_banner_skips_all_probes(servers):
@@ -254,7 +240,9 @@ def test_no_banner_skips_all_probes(servers):
 
     port = servers(spy)
     res = nemla.scan_port("127.0.0.1", port, grab=False)
-    assert set(res) == {"port", "service", "banner"}
+    assert {"port", "service", "banner"} <= set(res)
+    assert "product" not in res and "tls" not in res
+    assert res["heuristic"] is True and res["method"] == "port"   # the service name is only a guess
     assert len(seen) <= 1  # only the connect itself
 
 
@@ -298,9 +286,25 @@ def test_tls_findings():
 
 def test_plain_http_only_when_there_is_no_tls():
     web = {"status": 200}
-    assert ids(nemla.assess_host(host_with("10.0.0.5", (80, web)))) == {("http_plain", "low")}
-    both = host_with("10.0.0.5", (80, web), (443, {"tls": {"version": "TLSv1.3", "days_left": 90}}))
+    looked = {"tcp": "80,443"}
+    plain = host_with("10.0.0.5", (80, web))
+    plain["scanned"] = looked
+    assert ids(nemla.assess_host(plain)) == {("http_plain", "low")}
+    both = host_with("10.0.0.5", (80, web), (443, {"status": 200, "tls": {"version": "TLSv1.3", "days_left": 90}}))
+    both["scanned"] = looked
     assert nemla.assess_host(both) == []
+
+
+def test_plain_http_is_not_reported_when_https_was_never_looked_for():
+    """The old check said 'no HTTPS' after scanning port 80 alone: a false positive."""
+    only80 = host_with("10.0.0.5", (80, {"status": 200}))
+    only80["scanned"] = {"tcp": "80"}
+    assert nemla.assess_host(only80) == []
+    unknown = host_with("10.0.0.5", (80, {"status": 200}))        # a scan saved by an older version
+    assert nemla.assess_host(unknown) == []
+    redirecting = host_with("10.0.0.5", (80, {"status": 301, "location": "https://example.test/"}))
+    redirecting["scanned"] = {"tcp": "80,443"}
+    assert nemla.assess_host(redirecting) == []                     # it hands visitors over to HTTPS
 
 
 def test_findings_are_sorted_worst_first_and_version_is_info():
@@ -374,7 +378,8 @@ def test_json_and_csv_carry_the_new_fields():
     assert data["findings_summary"]["high"] == 1
     assert data["hosts"][0]["findings"][0]["id"] == "telnet"
     header, first = nemla.csv_text([sample_host()]).splitlines()[:2]
-    assert header.endswith(",product,version") and first.endswith("<b>evil</b>,1")
+    assert header.startswith("ip,mac,vendor,os_guess,ttl,port,service,banner,product,version")  # Nemla 1 columns first
+    assert "<b>evil</b>,1," in first
 
 
 def fake_scan(monkeypatch, severity):
@@ -382,7 +387,7 @@ def fake_scan(monkeypatch, severity):
             "findings": [{"id": "ftp", "severity": severity, "port": 21, "params": {}}]}
     meta = {"target": "10.0.0.5", "scan_time": "now", "duration": 0.1, "ports_scanned": 1,
             "discovered": 1, "cancelled": False, "findings": nemla.summarize_findings([host])}
-    monkeypatch.setattr(nemla, "run_scan", lambda *a, **k: ([host], meta))
+    monkeypatch.setattr(nemla.cli, "run_scan", lambda *a, **k: ([host], meta))
 
 
 @pytest.mark.parametrize("severity, level, code", [
@@ -426,7 +431,7 @@ def test_mac_vendor(mac, expected):
 def test_scan_results_carry_the_vendor(servers, monkeypatch):
     port = servers(lambda conn: conn.close())
     for mac, expected in (("b8:27:eb:11:22:33", "Raspberry Pi Foundation"), ("aa:bb:cc:dd:ee:ff", None)):
-        monkeypatch.setattr(nemla, "discover_hosts",
+        monkeypatch.setattr(nemla.engine, "discover_hosts",
                             lambda ips, mac=mac, **kw: {"127.0.0.1": {"mac": mac, "method": "ARP"}})
         hosts, _ = nemla.run_scan("127.0.0.1", ["127.0.0.1"], [port], no_os=True)
         assert hosts[0]["mac"] == mac and hosts[0]["vendor"] == expected

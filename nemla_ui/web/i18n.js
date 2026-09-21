@@ -622,12 +622,112 @@
     }
   };
 
+  // Nemla 2: history, confidence, evidence and the softer wording of ARP alerts
+  Object.assign(STRINGS.en, {
+      'tab.history': 'History',
+      'history.title': 'Saved scans',
+      'history.empty': 'Finished scans are saved here, so you can open them again and compare.',
+      'history.open': 'Open',
+      'history.hosts': '{n} hosts',
+      'history.ports': '{n} open ports',
+      'history.loaded': 'Opened a saved scan from {time}',
+      'history.failed': 'Could not open that scan.',
+      'history.refresh': 'Refresh',
+      'scan.opt.udp': 'Also probe common UDP ports (DNS, NTP, SNMP...)',
+      'insp.os.conf': '{n}% confidence',
+      'insp.est': 'estimated',
+      'insp.os.why': 'Why this guess',
+      'insp.evidence': 'Evidence',
+      'insp.fix': 'How to fix',
+      'insp.more': 'Details',
+      'insp.conf': '{n}% sure',
+      'insp.udp.unconfirmed': 'UDP ports that did not answer (open|filtered): {ports}',
+      'export.md': 'Markdown report',
+      'export.sarif': 'SARIF (security dashboards)',
+      'guard.conf.low': 'low confidence',
+      'guard.conf.medium': 'medium confidence',
+      'guard.conf.high': 'high confidence',
+      'guard.evidence': 'Evidence',
+      'guard.t.arp_change': '{ip} now answers from {new_mac} instead of {old_mac}. This can be ARP spoofing, but it is also what a replaced network card, a DHCP change or a virtual machine looks like.',
+      'guard.t.arp_gateway': 'The gateway {ip} now answers from {new_mac} instead of {old_mac}. This is a possible sign of ARP spoofing; check whether the router was replaced or restarted.',
+      'guard.t.arp_dup': '{mac} answers for several addresses including the gateway {ip}: {ips}. This can be ARP spoofing, or a router doing proxy ARP.'
+    });
+  Object.assign(STRINGS.ar, {
+      'tab.history': 'السجل',
+      'history.title': 'الفحوصات المحفوظة',
+      'history.empty': 'الفحوصات المنتهية بتنحفظ هون، فتقدر تفتحها من جديد وتقارن.',
+      'history.open': 'فتح',
+      'history.hosts': '{n} جهاز',
+      'history.ports': '{n} منفذ مفتوح',
+      'history.loaded': 'فتحت فحصاً محفوظاً من {time}',
+      'history.failed': 'ما قدرت أفتح هاد الفحص.',
+      'history.refresh': 'تحديث',
+      'scan.opt.udp': 'افحص كمان منافذ UDP الشائعة (DNS وNTP وSNMP...)',
+      'insp.os.conf': 'ثقة {n}%',
+      'insp.est': 'تقديري',
+      'insp.os.why': 'ليش هالتخمين',
+      'insp.evidence': 'الدليل',
+      'insp.fix': 'طريقة الإصلاح',
+      'insp.more': 'تفاصيل',
+      'insp.conf': 'متأكد {n}%',
+      'insp.udp.unconfirmed': 'منافذ UDP اللي ما ردّت (open|filtered): {ports}',
+      'export.md': 'تقرير Markdown',
+      'export.sarif': 'SARIF (لوحات الأمان)',
+      'guard.conf.low': 'ثقة منخفضة',
+      'guard.conf.medium': 'ثقة متوسطة',
+      'guard.conf.high': 'ثقة عالية',
+      'guard.evidence': 'الدليل',
+      'guard.t.arp_change': '{ip} صار يردّ من {new_mac} بدل {old_mac}. ممكن يكون انتحال ARP، بس هيك كمان بيبان لما يتبدّل كرت الشبكة أو يتغيّر DHCP أو يكون جهاز افتراضي.',
+      'guard.t.arp_gateway': 'بوابة الشبكة {ip} صارت تردّ من {new_mac} بدل {old_mac}. هاي علامة محتملة على انتحال ARP؛ تأكد إذا الراوتر انبدّل أو انعمله إعادة تشغيل.',
+      'guard.t.arp_dup': '{mac} بيردّ عن عدة عناوين منها البوابة {ip}: {ips}. ممكن يكون انتحال ARP، أو راوتر شغّال بـ proxy ARP.'
+    });
+  Object.assign(STRINGS.he, {
+      'tab.history': 'היסטוריה',
+      'history.title': 'סריקות שמורות',
+      'history.empty': 'סריקות שהסתיימו נשמרות כאן, וכך אפשר לפתוח אותן שוב ולהשוות.',
+      'history.open': 'פתיחה',
+      'history.hosts': '{n} מכשירים',
+      'history.ports': '{n} פורטים פתוחים',
+      'history.loaded': 'נפתחה סריקה שמורה מ-{time}',
+      'history.failed': 'לא ניתן לפתוח את הסריקה הזו.',
+      'history.refresh': 'רענון',
+      'scan.opt.udp': 'לסרוק גם פורטי UDP נפוצים (DNS, NTP, SNMP...)',
+      'insp.os.conf': 'ביטחון {n}%',
+      'insp.est': 'משוער',
+      'insp.os.why': 'למה הניחוש הזה',
+      'insp.evidence': 'ראיה',
+      'insp.fix': 'איך לתקן',
+      'insp.more': 'פרטים',
+      'insp.conf': 'בטוח ב-{n}%',
+      'insp.udp.unconfirmed': 'פורטי UDP שלא ענו (open|filtered): {ports}',
+      'export.md': 'דוח Markdown',
+      'export.sarif': 'SARIF (לוחות בקרת אבטחה)',
+      'guard.conf.low': 'רמת ביטחון נמוכה',
+      'guard.conf.medium': 'רמת ביטחון בינונית',
+      'guard.conf.high': 'רמת ביטחון גבוהה',
+      'guard.evidence': 'ראיה',
+      'guard.t.arp_change': '{ip} עונה כעת מ-{new_mac} במקום {old_mac}. זה עשוי להיות התחזות ARP, אבל כך נראים גם החלפת כרטיס רשת, שינוי DHCP או מכונה וירטואלית.',
+      'guard.t.arp_gateway': 'שער הרשת {ip} עונה כעת מ-{new_mac} במקום {old_mac}. זה סימן אפשרי להתחזות ARP; בדקו אם הנתב הוחלף או הופעל מחדש.',
+      'guard.t.arp_dup': '{mac} עונה עבור כמה כתובות, כולל שער הרשת {ip}: {ips}. זה עשוי להיות התחזות ARP, או נתב שעושה proxy ARP.'
+    });
+
   let lang = 'en';
 
   function t(key, vars) {
     let text = (STRINGS[lang] && STRINGS[lang][key]) || STRINGS.en[key] || key;
     if (vars) text = text.replace(/\{(\w+)\}/g, (m, k) => (k in vars && vars[k] != null ? vars[k] : m));
     return text;
+  }
+
+  function has(key) {
+    return !!((STRINGS[lang] && STRINGS[lang][key]) || STRINGS.en[key]);
+  }
+
+  // texts that only the server knows (finding titles, why they matter, how to fix them)
+  function extend(dictionaries) {
+    Object.keys(dictionaries || {}).forEach((code) => {
+      if (STRINGS[code]) Object.assign(STRINGS[code], dictionaries[code]);
+    });
   }
 
   function apply(root) {
@@ -663,7 +763,7 @@
   }
 
   window.NemlaI18n = {
-    t, apply, setLang, detect, names: NAMES, codes: Object.keys(STRINGS),
+    t, has, extend, apply, setLang, detect, names: NAMES, codes: Object.keys(STRINGS),
     get lang() { return lang; }
   };
 })();

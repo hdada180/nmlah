@@ -22,7 +22,22 @@
     }
     return node;
   }
-  const ipKey = (ip) => ip.split('.').reduce((a, b) => a * 256 + (+b || 0), 0);
+  // sortable key for IPv4 and IPv6 addresses: IPv4 first, then IPv6 by its eight groups
+  function ipKey(ip) {
+    const bare = String(ip).split('%')[0];
+    if (bare.indexOf(':') === -1) return [4, bare.split('.').reduce((a, b) => a * 256 + (+b || 0), 0)];
+    const halves = bare.split('::');
+    const head = halves[0] ? halves[0].split(':') : [];
+    const tail = halves.length > 1 && halves[1] ? halves[1].split(':') : [];
+    const fill = halves.length > 1 ? new Array(Math.max(0, 8 - head.length - tail.length)).fill('0') : [];
+    return [6].concat(head.concat(fill, tail).map((g) => parseInt(g || '0', 16) || 0));
+  }
+  function cmpIp(a, b) {
+    const x = ipKey(a), y = ipKey(b);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d; }
+    return 0;
+  }
+  const portLabel = (p) => (p.proto && p.proto !== 'tcp' ? p.port + '/' + p.proto : String(p.port));
   const safe = (fn) => { try { return fn(); } catch (e) { return null; } };
 
   const state = {
@@ -31,7 +46,7 @@
     selected: null, tab: 'scan', logs: [], stage: 'discovery',
     prog: { done: 0, total: 0, hostIndex: 0, hostTotal: 0, pdone: 0, ptotal: 0 }, focusIp: null, lostShown: false,
     guard: { running: false, decoys: [], failed: {}, learning: true }, guardEs: null, guardDemo: null,
-    alerts: [], alertLast: 0, diff: null
+    alerts: [], alertLast: 0, diff: null, history: [], savedId: null
   };
 
   /* ---------------------------------------------------------------- link */
@@ -146,7 +161,7 @@
     if (state.phase === 'done' || state.phase === 'stopped') return 1;
     if (state.phase !== 'running') return 0;
     if (state.stage === 'discovery') return 0.2 * (p.total ? p.done / p.total : 0);
-    return 0.2 + 0.8 * (Math.max(0, p.hostIndex - 1) + (p.ptotal ? p.pdone / p.ptotal : 0)) / Math.max(1, p.hostTotal);
+    return 0.2 + 0.8 * (p.ptotal ? p.pdone / p.ptotal : 0);
   }
 
   function renderStatus() {
@@ -159,7 +174,7 @@
     $('#btnStop').hidden = !running;
     const start = $('#btnStart');
     start.disabled = running;
-    $('#btnExport').disabled = !(state.phase === 'done' || state.phase === 'stopped') || state.demo || !state.job;
+    $('#btnExport').disabled = !(state.phase === 'done' || state.phase === 'stopped') || state.demo || !(state.job || state.savedId);
     $('#demoBadge').hidden = !state.demo;
     $('#hint').hidden = state.hosts.size > 0 || running;
     renderPhaseText();
@@ -188,7 +203,16 @@
     });
     return best;
   }
-  const findingText = (f) => t('find.' + f.id, Object.assign({ port: f.port }, f.params || {}));
+  const findingVars = (f) => Object.assign({ port: f.port, host: f.host }, f.params || {});
+  const findingText = (f) => t('find.' + f.id, findingVars(f));
+  const findingWhy = (f) => (I.has('finddesc.' + f.id) ? t('finddesc.' + f.id, findingVars(f)) : '');
+  const findingFix = (f) => (I.has('findfix.' + f.id) ? t('findfix.' + f.id, findingVars(f)) : '');
+  const pct = (x) => Math.round(x * 100);
+  function osLabel(h) {
+    const o = h.os;
+    if (!o || o.confidence == null || o.family === 'unknown') return h.os_guess || '';
+    return (o.name || h.os_guess) + ' · ' + t('insp.os.conf', { n: pct(o.confidence) }) + (o.heuristic ? ' · ' + t('insp.est') : '');
+  }
   function countFindings() {
     let n = 0, high = 0;
     state.hosts.forEach((h) => (h.findings || []).forEach((f) => { if (f.severity !== 'info') { n += 1; if (f.severity === 'high') high += 1; } }));
@@ -199,7 +223,7 @@
   function renderHosts(force) {
     const list = $('#hostList');
     const q = $('#hostFilter').value.trim().toLowerCase();
-    const hosts = Array.from(state.hosts.values()).sort((a, b) => ipKey(a.ip) - ipKey(b.ip)).filter((h) => {
+    const hosts = Array.from(state.hosts.values()).sort((a, b) => cmpIp(a.ip, b.ip)).filter((h) => {
       if (!q) return true;
       return h.ip.includes(q) || (h.os_guess || '').toLowerCase().includes(q) ||
         h.open_ports.some((p) => String(p.port) === q || (p.service || '').toLowerCase().includes(q));
@@ -260,10 +284,10 @@
   /* ------------------------------------------------------------ inspector */
 
   function summary(h) {
-    const lines = [h.ip + (h.os_guess ? ' - ' + h.os_guess : '')];
+    const lines = [h.ip + (osLabel(h) ? ' - ' + osLabel(h) : '')];
     h.open_ports.forEach((p) => {
       const product = [p.product, p.version].filter(Boolean).join(' ');
-      lines.push('  ' + p.port + '/tcp  ' + p.service + (product ? '  ' + product : '') + (p.banner ? '  ' + p.banner : ''));
+      lines.push('  ' + p.port + '/' + (p.proto || 'tcp') + '  ' + p.service + (product ? '  ' + product : '') + (p.banner ? '  ' + p.banner : ''));
     });
     if (!h.open_ports.length) lines.push('  ' + t('insp.noports'));
     (h.findings || []).filter((f) => f.severity !== 'info').forEach((f) => lines.push('  [' + t('sev.' + f.severity) + '] ' + findingText(f)));
@@ -277,7 +301,11 @@
     box.hidden = false;
     $('#inspIp').textContent = h.ip;
     const badges = $('#inspBadges');
-    badges.replaceChildren(...[h.os_guess].filter(Boolean).map((x) => el('span', { class: 'badge', text: x })));
+    badges.replaceChildren(...[osLabel(h)].filter(Boolean).map((x) => el('span', { class: 'badge', text: x })));
+    const ev = $('#inspEvidence'), why = (h.os && h.os.evidence) || [];
+    ev.hidden = !why.length;
+    ev.title = t('insp.os.why');
+    ev.replaceChildren(...why.slice(0, 6).map((line) => el('li', { text: line })));
     const kv = $('#inspKv'), rows = [];
     if (h.mac) rows.push(['insp.mac', h.mac]);
     if (h.vendor) rows.push(['insp.vendor', h.vendor]);
@@ -293,8 +321,15 @@
     if (!soft || fl._sig !== fsig) {
       fl._sig = fsig;
       const rows = finds.map((f) => {
-        const li = el('li', { 'data-sev': f.severity }, el('span', { class: 'sev-chip', text: t('sev.' + f.severity) }), el('span', { text: findingText(f) }));
-        return li;
+        const body = el('div', { class: 'fbody' }, el('span', { text: findingText(f) }));
+        if (f.severity !== 'info' && (findingWhy(f) || f.evidence)) {
+          const more = el('details', {}, el('summary', { text: t('insp.more') }));
+          if (findingWhy(f)) more.append(el('p', { text: findingWhy(f) }));
+          if (findingFix(f)) more.append(el('p', {}, el('b', { text: t('insp.fix') + ': ' }), document.createTextNode(findingFix(f))));
+          if (f.evidence) more.append(el('p', { class: 'fev', text: t('insp.evidence') + ': ' + f.evidence + (f.confidence != null ? ' (' + t('insp.conf', { n: pct(f.confidence) }) + ')' : '') }));
+          body.append(more);
+        }
+        return el('li', { 'data-sev': f.severity }, el('span', { class: 'sev-chip', text: t('sev.' + f.severity) }), body);
       });
       if (!rows.length && (h.state === 'done' || state.phase !== 'running')) rows.push(el('li', { class: 'ok' }, el('span', { text: t('insp.nofindings') })));
       fl.replaceChildren(...rows);
@@ -308,7 +343,8 @@
         const product = [p.product, p.version].filter(Boolean).join(' ');
         const tls = p.tls || {};
         const metaBits = [p.title, tls.version && [tls.version, tls.subject, tls.not_after && ('→ ' + tls.not_after)].filter(Boolean).join(' · ')].filter(Boolean);
-        const li = el('li', {}, el('div', { class: 'row' }, el('span', { class: 'pnum', text: p.port }), el('span', { class: 'psvc', text: p.service })),
+        const conf = p.confidence == null ? null : el('span', { class: 'conf' + (p.heuristic ? ' guess' : ''), title: p.evidence || '', text: pct(p.confidence) + '%' + (p.heuristic ? ' ~' : '') });
+        const li = el('li', {}, el('div', { class: 'row' }, el('span', { class: 'pnum', text: portLabel(p) }), el('span', { class: 'psvc', text: p.service }), conf),
           product ? el('span', { class: 'prod', text: product }) : null,
           metaBits.length ? el('span', { class: 'meta', text: metaBits.join(' | ') }) : null,
           el('code', { class: p.banner ? '' : 'none', text: p.banner || t('insp.nobanner') }));
@@ -318,6 +354,9 @@
       if (!items.length) items.push(el('li', {}, el('code', { class: 'none', text: h.state === 'done' || state.phase !== 'running' ? t('insp.noports') : t('insp.pending') })));
       ul.replaceChildren(...items);
     }
+    const udp = $('#inspUdp'), quiet = (h.udp_unconfirmed || []).map((u) => u.port);
+    udp.hidden = !quiet.length;
+    udp.textContent = quiet.length ? t('insp.udp.unconfirmed', { ports: quiet.join(', ') }) : '';
     if (wasHidden) updateInsets();
   }
 
@@ -327,7 +366,7 @@
     if (state.es) { state.es.close(); state.es = null; }
     if (state.stopDemo) { state.stopDemo(); state.stopDemo = null; }
     clearInterval(state.timer);
-    state.hosts.clear(); hostEls.clear(); state.openPorts = 0; state.logs = []; state.finalSeconds = null;
+    state.hosts.clear(); hostEls.clear(); state.openPorts = 0; state.logs = []; state.finalSeconds = null; state.savedId = null;
     state.selected = null; state.focusIp = null; state.stage = 'discovery';
     state.prog = { done: 0, total: 0, hostIndex: 0, hostTotal: 0, pdone: 0, ptotal: 0 };
     scene.clear();
@@ -365,11 +404,11 @@
       }
       case 'host_start': {
         const h = state.hosts.get(ev.ip); if (!h) break;
-        h.state = 'scanning'; state.focusIp = ev.ip; state.prog.hostIndex = ev.index; state.prog.hostTotal = ev.total; state.prog.pdone = 0;
+        h.state = 'scanning'; state.focusIp = ev.ip; state.prog.hostIndex = ev.index; state.prog.hostTotal = ev.total;
         scene.setHostState(ev.ip, 'scanning'); renderPhaseText(); dirty(); break;
       }
       case 'port': {
-        const h = state.hosts.get(ev.ip); if (!h || h.open_ports.some((p) => p.port === ev.port)) break;
+        const h = state.hosts.get(ev.ip); if (!h || h.open_ports.some((p) => p.port === ev.port && (p.proto || 'tcp') === (ev.proto || 'tcp'))) break;
         const rec = Object.assign({}, ev); delete rec.type; delete rec.ip;
         h.open_ports.push(rec); state.openPorts += 1;
         scene.addPort(ev.ip, ev); dirty(); break;
@@ -458,7 +497,7 @@
     const profile = ($('input[name="depth"]:checked') || {}).value || 'quick';
     const body = {
       target, profile, ports: $('#ports').value, no_ping: $('#optNoPing').checked, no_os: !$('#optOs').checked,
-      no_banner: !$('#optBanner').checked, threads: +$('#optThreads').value || 150, timeout: +$('#optTimeout').value || 0.7,
+      no_banner: !$('#optBanner').checked, udp: $('#optUdp').checked, threads: +$('#optThreads').value || 150, timeout: +$('#optTimeout').value || 0.7,
       lang: I.lang, authorized: true
     };
     state.demo = false;
@@ -489,8 +528,9 @@
   }
 
   function download(fmt) {
-    if (!state.job || state.demo) return;
-    const a = el('a', { href: '/api/report?job=' + encodeURIComponent(state.job) + '&fmt=' + fmt + '&lang=' + I.lang + '&k=' + encodeURIComponent(state.token), download: '' });
+    if ((!state.job && !state.savedId) || state.demo) return;
+    const path = state.savedId ? 'history/report?id=' + encodeURIComponent(state.savedId) : 'report?job=' + encodeURIComponent(state.job);
+    const a = el('a', { href: '/api/' + path + '&fmt=' + fmt + '&lang=' + I.lang + '&k=' + encodeURIComponent(state.token), download: '' });
     document.body.append(a); a.click(); a.remove();
     closeMenu();
   }
@@ -546,7 +586,59 @@
     $$('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
     $$('.pane').forEach((p) => { p.hidden = p.id !== 'pane-' + name; });
     if (name === 'log') renderLog();
+    if (name === 'history') loadHistory();
     if (name === 'guard') { state.alertLast = state.alerts.length; renderAlertCount(); }
+  }
+
+  /* ------------------------------------------------------------- history */
+
+  async function loadHistory() {
+    try {
+      const res = await api('history');
+      const data = await res.json();
+      state.history = data.scans || [];
+    } catch (e) { state.history = []; }
+    renderHistory();
+  }
+
+  function renderHistory() {
+    const list = $('#historyList');
+    list.replaceChildren(...state.history.map((s) => {
+      const findings = s.findings || {};
+      const li = el('li', { tabindex: '0', role: 'button' },
+        el('span', { class: 'target', text: s.target }),
+        el('span', { class: 'when', text: s.scan_time }),
+        el('span', { class: 'sums' }, document.createTextNode(t('history.hosts', { n: s.hosts }) + ' · ' + t('history.ports', { n: s.open_ports })),
+          findings.high ? el('b', { text: '  ' + findings.high + ' ' + t('sev.high') }) : null));
+      const open = () => openSaved(s.id);
+      li.addEventListener('click', open);
+      li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+      return li;
+    }));
+    $('#historyEmpty').hidden = state.history.length > 0;
+  }
+
+  async function openSaved(id) {
+    if (state.phase === 'running') return;
+    let data, diff = null;
+    try {
+      const res = await api('history/scan?id=' + encodeURIComponent(id));
+      if (!res.ok) throw new Error('missing');
+      data = await res.json();
+      const at = state.history.findIndex((s) => s.id === id);
+      const older = at >= 0 ? state.history.slice(at + 1).find((s) => s.target === state.history[at].target) : null;
+      if (older) {
+        const dres = await api('history/diff?a=' + encodeURIComponent(older.id) + '&b=' + encodeURIComponent(id));
+        if (dres.ok) diff = await dres.json();
+      }
+    } catch (e) { toast(t('history.failed'), 'error'); return; }
+    resetRun();
+    state.demo = false; state.job = null; state.savedId = id;
+    setTab('hosts');
+    finish({ hosts: data.hosts, meta: { duration: data.duration_seconds || 0, cancelled: false }, diff });
+    state.savedId = id;
+    renderStatus();
+    toast(t('history.loaded', { time: data.scan_time || '' }));
   }
 
   /* -------------------------------------------------------------- guard */
@@ -630,7 +722,8 @@
         }
         li.append(
           el('div', { class: 'alert-top' }, el('b', { text: alertTitle(a.kind, a.detail && a.detail.gateway) }), el('time', { text: fmtClock(a.time) })),
-          el('p', { class: 'alert-text', text: alertText(a) }),
+          el('p', { class: 'alert-text', text: alertText(a) + (a.confidence != null ? '  (' + t('guard.conf.' + (a.confidence >= 0.75 ? 'high' : a.confidence >= 0.45 ? 'medium' : 'low')) + ')' : '') }),
+          (a.evidence && a.evidence.length) ? el('ul', { class: 'evidence', title: t('guard.evidence') }, ...a.evidence.slice(0, 5).map((line) => el('li', { text: line }))) : null,
           el('p', { class: 'alert-next', text: alertNextStep(a.kind) }),
           actions
         );
@@ -807,6 +900,7 @@
     $$('.tabs button').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
     $('#scanForm').addEventListener('submit', (e) => { e.preventDefault(); if (state.phase !== 'running') startScan(); });
     $('#btnStop').addEventListener('click', stopScan);
+    $('#historyRefresh').addEventListener('click', loadHistory);
     $('#btnDemo').addEventListener('click', startDemo);
     $('#chipNet').addEventListener('click', () => { $('#target').value = (state.info && state.info.suggested_target) || '192.168.1.0/24'; });
     $('#chipSelf').addEventListener('click', () => { $('#target').value = '127.0.0.1'; });
@@ -902,6 +996,10 @@
           state.info = await res.json();
           const saved = safe(() => localStorage.getItem('nemla.lang'));
           if (state.info.lang && !saved) applyLang(state.info.lang);
+          try {   // finding titles, explanations and fixes come from the server, in every language
+            const texts = await api('strings');
+            if (texts.ok) { I.extend(await texts.json()); I.apply(document); }
+          } catch (e) { /* the built-in texts still work */ }
           applyInfo();
           startHeartbeat();
           if (state.info.job) attach(state.info.job.id);

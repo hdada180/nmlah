@@ -1,5 +1,6 @@
 import json
 import socket
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -83,8 +84,9 @@ def test_parse_targets_limits_and_errors():
         nemla.parse_targets("10.0.0.0/16", max_hosts=1024)
     with pytest.raises(ValueError):
         nemla.parse_targets("10.0.0.9-10.0.0.1")
+    assert nemla.parse_targets("::1") == ["::1"]          # IPv6 is supported now
     with pytest.raises(ValueError):
-        nemla.parse_targets("::1")
+        nemla.parse_targets("10.0.0.1; rm -rf /")
 
 
 # --------------------------------------------------------------------------
@@ -112,7 +114,9 @@ def test_tcp_ping_treats_refused_as_alive():
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
     s.close()  # nothing listens -> RST -> host is up
-    assert nemla.tcp_ping("127.0.0.1", ports=(port,)) is True
+    # Windows answers a refused connection only after its SYN retries (about 2 s)
+    wait = 3.0 if sys.platform == "win32" else 0.6
+    assert nemla.tcp_ping("127.0.0.1", ports=(port,), timeout=wait) is True
 
 
 # --------------------------------------------------------------------------

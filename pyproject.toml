@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemla"
-version = "1.2.0"
-description = "Lightweight network reconnaissance tool with a 3D interface: host discovery, TCP port scan, banners, OS guess and HTML/JSON/CSV reports (English + Arabic)."
+version = "2.0.0"
+description = "Lightweight network reconnaissance, service intelligence and defensive monitoring: IPv4/IPv6 discovery, TCP and UDP scanning, service and OS fingerprinting, TLS analysis, evidence-based findings, reports, history and a 3D web interface (English, Arabic, Hebrew)."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [{ name = "hdada180" }]
-keywords = ["network", "port-scanner", "reconnaissance", "security", "arabic", "nmap-alternative"]
+keywords = ["network", "port-scanner", "reconnaissance", "fingerprinting", "security", "monitoring", "ipv6", "udp", "sarif", "arabic", "hebrew"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -24,18 +24,17 @@ dependencies = []
 
 [project.optional-dependencies]
 arp = ["scapy>=2.5"]
-dev = ["pytest"]
+dev = ["pytest", "pyflakes"]
 
 [project.scripts]
-nemla = "nemla:main"
+nemla = "nemla.main:main"
 
 [project.urls]
 Homepage = "https://github.com/hdada180/nmlah"
 Issues = "https://github.com/hdada180/nmlah/issues"
 
 [tool.setuptools]
-py-modules = ["nemla"]
-packages = ["nemla_ui"]
+packages = ["nemla", "nemla.discovery", "nemla.scanning", "nemla.fingerprint", "nemla.reports", "nemla_ui"]
 
 [tool.setuptools.package-data]
 nemla_ui = ["web/*.*", "web/brand/*"]

@@ -1,6 +1,6 @@
-# 🐜 Nemla — Network Reconnaissance Tool
+# 🐜 Nemla — Lightweight Network Reconnaissance, Service Intelligence & Defensive Monitoring Platform
 
-**Discover · Scan · Fingerprint · Report**
+**Discover · Scan · Fingerprint · Assess · Report · Watch**
 
 [![Python](https://img.shields.io/badge/python-3.8%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-orange)](LICENSE)
@@ -8,117 +8,51 @@
 
 **English** · [العربية](README.ar.md) · [עברית](README.he.md)
 
-Nemla (Arabic: **نملة**, "ant") is a small, dependency-free network reconnaissance tool written in Python. Point it at an IP, a hostname, a range or a subnet and it finds live hosts, scans TCP ports, identifies what is running (products, versions, TLS certificates), makes a best-guess at the operating system, tells you in plain words what looks risky, and writes a clean **HTML report** (plus JSON and CSV for scripting). The interface and the report are available in **English, Arabic and Hebrew**.
+Nemla (Arabic: **نملة**, "ant") is a small network reconnaissance platform written in Python with **no required dependencies**. Point it at an IP (IPv4 or IPv6), a hostname, a range or a subnet and it finds live hosts, scans TCP and UDP ports, identifies the service behind every open port (product, version, TLS certificate, protocol details), estimates the operating system from several independent signals, and turns what it saw into **evidence-based findings** with a confidence level and a fix. It writes reports as **HTML, JSON, CSV, Markdown and SARIF**, remembers your scans and tells you what changed, and can guard a network against suspicious activity. Everything is available in **English, Arabic and Hebrew**, on the command line, in reports and in a 3D web interface.
 
 ![Nemla HTML report](docs/report-en.png)
 
 > The screenshot is a scan of a local lab (`127.0.0.1`) running a few demo services. See [`nemla_report_sample.html`](nemla_report_sample.html) for the full report.
 
+## What's new in 2.0
+
+- **A real architecture.** The single 1,900-line `nemla.py` became the `nemla/` package: targets, discovery, a bounded scheduler, TCP and UDP scanners, one small plugin per protocol, OS detection, findings, reports, history and guard. `python3 nemla.py ...` and `import nemla` keep working. See [docs/architecture.md](docs/architecture.md).
+- **IPv6** everywhere (targets, scanning, discovery, reports, history, the interface).
+- **UDP scanning** with honest states: `open`, `closed`, `open|filtered`, `unknown`, rate limited and safe.
+- **Service fingerprinting as plugins:** HTTP/HTTPS, SSH (with the algorithms the server offers), FTP, SMTP, POP3, IMAP, DNS, Redis, Memcached, MySQL/MariaDB, PostgreSQL, RDP (NLA), SMB (SMBv1, signing), Telnet, VNC, plus TLS and certificate analysis with Nemla's own X.509 reader.
+- **Confidence everywhere.** Every service and OS result carries a confidence and its evidence. A guess from a port number alone is labelled a guess.
+- **A findings engine that shows its work:** id, severity, title, description, evidence, host, port, remediation and confidence, in three languages.
+- **Reports:** executive summary, scan metadata, errors and warnings, plus Markdown and SARIF 2.1.0.
+- **Correctness and speed:** validated options, a scheduler that never queues tens of thousands of tasks, per-host and global limits, rate limiting, a probe budget and cancellation that takes effect within a tenth of a second.
+- **Security hardening** of the local server, reports, history and launcher, with a test for every fix. See [Security](#security).
+
 ## Why Nemla?
 
-[nmap](https://nmap.org) is far more powerful, and you should use it for serious work. Nemla is for the moments when you want something smaller:
+[nmap](https://nmap.org) is far more powerful, and you should use it for serious work. Nemla is for the moments when you want something smaller and more explanatory:
 
-- **Zero setup** — standard library only. The scanner is one Python file (`nemla.py`); the 3D interface and Guard mode live in an optional `nemla_ui/` folder next to it. Scapy is optional.
-- **A report you can actually hand to someone** — a readable dark-mode HTML page, no XML converting.
-- **Arabic and Hebrew** — `--lang ar` or `--lang he` switches the whole CLI, the report and the interface to right-to-left Arabic or Hebrew.
-- **Readable source** — plain Python with no frameworks. Start at `main()` and `run_scan()` in `nemla.py`; a good part of that file is translation tables. That makes it good for learning how scanners work.
+- **Zero setup**: standard library only (Scapy is optional). No compiled parts.
+- **It explains itself.** Every finding says what was observed, how sure Nemla is and what to do.
+- **Honest confidence.** Nemla never presents a heuristic as a fact.
+- **A report you can hand to someone**: a readable dark-mode HTML page, or Markdown and SARIF for your tooling.
+- **Arabic and Hebrew**: `--lang ar` or `--lang he` switches the CLI, the reports and the interface, right-to-left included.
+- **Readable source**: plain Python, one small module per protocol. Good for learning how scanners work.
 
-## What Nemla tells you
+## Features
 
-Besides open ports, Nemla identifies what is running and says what it means:
-
-- **Products and versions** from banners and light probes (OpenSSH, nginx, Apache, vsftpd, Postfix, MySQL, PostgreSQL, Redis and more), plus web page titles.
-- **TLS details:** protocol version, certificate subject and issuer, expiry date, and whether the certificate is self-signed.
-- **Who made it.** When ARP discovery gives a MAC address, Nemla names the platform behind well-known prefixes (VMware, VirtualBox, Hyper-V, Xen, QEMU/KVM, Docker, Raspberry Pi). This is a small hand-picked list, not the full IEEE registry, so most addresses show no name.
-- **Findings** in plain words, each rated high, medium, low or info: cleartext services such as Telnet and FTP, databases and remote-access ports that are reachable, Redis, Memcached or Elasticsearch answering without a password, expired or soon-to-expire certificates, obsolete TLS versions, websites without HTTPS. Exposure on a public IP address is rated higher than on a private network.
-- Findings are observations only. Nemla never logs in, guesses passwords or exploits anything.
-
-Use it in scripts and CI: the command below exits with code 3 when a finding at that level or above is present.
-
-```bash
-python3 nemla.py -t 10.0.0.0/24 --fail-on high
-```
-
-## What changed since last time
-
-Nemla remembers your scans (the newest 60, in your Nemla data folder) and compares each new scan with the previous one of the same target: hosts that appeared or vanished, ports that opened or closed, services whose product or version changed, a different system guess, and findings that appeared or were resolved. In the 3D interface this shows as a card above the host list, new hosts pulse blue and vanished hosts stay behind as dashed outlines.
-
-On the command line:
-
-```bash
-python3 nemla.py -t 192.168.1.0/24 --json today.json
-```
-
-```bash
-python3 nemla.py --diff yesterday.json today.json
-```
-
-`--diff` prints the changes, and with `--fail-on-change` it exits with code 3 if something appeared (a host, an open port or a finding), which suits scheduled checks.
-
-To keep an eye on a network, let Nemla scan again and again and report each change (stop with Ctrl+C):
-
-```bash
-python3 nemla.py -t 192.168.1.0/24 --watch 15m --watch-log changes.jsonl
-```
-
-The interval can be written as `90s`, `15m` or `2h` (at least 10 seconds). Every round is saved, so the next run continues from the last one.
-
-## Guard mode (defensive)
-
-Nemla can also watch a network instead of scanning it. Guard mode looks for three signs that something suspicious is going on inside your network:
-
-- **Decoy ports.** Nemla opens a few ports that no legitimate device or person has any reason to touch (2222, 2323, 5901, 8888 and 3307 by default). Whatever connects to one is probing your network, and Nemla records who it was and what it sent. This gives very few false alarms.
-- **Unknown devices.** The first check learns your devices by their hardware (MAC) address. After that, a device that was not there before raises an alert. When the address belongs to a well-known platform the alert names it (for example a Raspberry Pi or a virtual machine), and it says when the address is "locally administered", which is what virtual machines, containers and phones with a private Wi-Fi address use.
-- **ARP changes.** If an address suddenly answers from a different device, above all your gateway, that is the classic trace of ARP spoofing (a man-in-the-middle).
-
-Guard only watches and alerts. It never attacks back, never scans other machines on its own, and never changes your firewall: for a device you want to block it shows the exact command and leaves running it to you.
-
-```bash
-python3 nemla.py --guard
-```
-
-Or switch on **Guard** in the 3D interface: the screen flashes, the source glows red on the map, and every alert says what to do next. The interface only guards while it is open. For always-on protection run `nemla --guard` (for example on a Raspberry Pi), optionally with `--guard-log alerts.jsonl` so alerts are also saved as JSON lines.
-
-Notes: decoy ports above 1024 need no special rights, and nothing in Guard needs root. Connections from the computer running Guard are ignored, and phones that randomise their Wi-Fi address can look like new devices.
-
-## The 3D interface
-
-Run Nemla with no arguments and it opens its own window: a 3D map of your network, a scan form, a live host list and a host inspector. It is the same scanner as the command line, just easier to work with.
-
-![The Nemla 3D interface showing the demo colony](docs/ui-3d.png)
-
-> The screenshot is the built-in demo colony (made-up hosts). New hosts pulse blue, the dashed circle on the left is a host that vanished, and the card on the left lists what changed since the previous scan.
-
-```bash
-python3 nemla.py            # opens the 3D interface
-```
-
-- **The colony view.** This computer is the nest in the middle, every discovered host floats around it, and each open port orbits its host, coloured by service type (web, remote access, database, mail, files). Drag to orbit, scroll to zoom, click a host to inspect it.
-- **Live.** Hosts and ports appear while the scan runs. Stop keeps the partial results.
-- **Risk at a glance.** Hosts with high or medium findings pulse rose or gold in the map, and the inspector lists every finding with its severity.
-- **Export.** HTML report, JSON or CSV from the Export button.
-- **English, Arabic and Hebrew**, right-to-left included, with a language menu.
-- **Try it without scanning.** "Watch a demo colony" replays a made-up network.
-- **Standard library only.** The interface is a small local web server plus one page. There is nothing to install and it works offline.
-
-### Add Nemla to the Linux applications menu
-
-```bash
-python3 nemla.py --install-launcher     # menu entry, icon and a `nemla` command, all under ~/.local
-python3 nemla.py --uninstall-launcher   # removes them again
-```
-
-Then open **Nemla** from your applications menu (or type `nemla`). In a Chromium-family browser (Chrome, Chromium, Brave, Edge) it opens as its own window without browser chrome, otherwise in your default browser. Closing the window stops Nemla.
-
-ARP discovery needs root, and browsers refuse to start as root, so for that case run `sudo python3 nemla.py --no-browser` and open the printed address in your browser. Over SSH, forward the port (`ssh -L PORT:127.0.0.1:PORT host`) and open the address locally.
-
-### How it stays safe
-
-The interface listens on `127.0.0.1` only. Every request needs a random token that exists only in the link Nemla opens, and the `Host` and `Origin` headers are checked, so other websites and other machines cannot start scans. Scanned text (banners, OS strings) is shown as plain text, never as HTML, and the page runs under a strict Content-Security-Policy. The first scan asks you to confirm that you own the network or may test it.
-
-### Identity
-
-Nemla has its own logo, colours and type: see [`docs/brand.html`](docs/brand.html). The logo files live in [`nemla_ui/web/brand/`](nemla_ui/web/brand/).
+| Area | What Nemla does |
+| --- | --- |
+| Targets | IPv4, IPv6 (`2001:db8::/120`, `fe80::1%eth0`), host names (`getaddrinfo`), CIDR, ranges, several at once; generated lazily, so a million addresses cost no memory |
+| Discovery | ARP (Scapy, or the OS neighbour cache without root), completed by ICMP and TCP probes for the addresses ARP missed |
+| TCP | Concurrent connect scan through a bounded scheduler, banner grabbing, service identification |
+| UDP | DNS, TFTP, RPCBind, NTP, NetBIOS, SNMP (default community), SSDP, mDNS, Memcached; paced by a token bucket |
+| Services | Product, version, confidence, evidence and protocol facts (STARTTLS, NLA, SMB signing, weak SSH algorithms...) |
+| TLS | Protocol, cipher, certificate subject, issuer, validity, signature algorithm, key type and size, self-signed, TLS 1.0/1.1 still accepted |
+| OS | TTL, TCP SYN-ACK shape (Scapy + root), banners, open ports, protocol facts, NIC maker; the result has a confidence and evidence |
+| Findings | Exposed administration and remote access, insecure and plaintext protocols, expired or weak certificates, weak TLS and SSH, default SNMP, open Redis/Memcached/Elasticsearch, SMBv1, RDP without NLA, open resolvers, admin consoles |
+| Reports | HTML, JSON, CSV (formula-injection safe), Markdown, SARIF |
+| History | UUID scan ids, atomic private files, comparison: new/removed hosts, opened/closed ports (TCP and UDP), service, version and OS changes, new and resolved findings |
+| Guard | Decoy ports, unknown devices, ARP changes with a confidence and the evidence behind it |
+| Interface | 3D colony map, live progress, inspector with confidence and evidence, history, diff, Guard status, English/Arabic/Hebrew |
 
 ## Install
 
@@ -128,13 +62,13 @@ cd nmlah
 python3 nemla.py --help
 ```
 
-Optional, for ARP discovery on local networks and raw-ICMP TTL probing:
+Optional, for ARP discovery and raw SYN fingerprinting (needs root):
 
 ```bash
 pip install scapy        # or: pip install -r requirements.txt
 ```
 
-You can also install it as a command: `pip install .` (or `pip install ".[arp]"`), then run `nemla -t ...`.
+You can also install it as a command: `pip install .` (or `pip install ".[arp]"`), then run `nemla -t ...` or `python -m nemla -t ...`.
 
 ## Quick start
 
@@ -142,105 +76,209 @@ You can also install it as a command: `pip install .` (or `pip install ".[arp]"`
 # a whole subnet, common ports
 sudo python3 nemla.py -t 192.168.1.0/24
 
-# one host, ports 1-1000
-python3 nemla.py -t 192.168.1.10 -p 1-1000
+# one host, ports 1-1000, plus the common UDP ports
+python3 nemla.py -t 192.168.1.10 -p 1-1000 --udp
 
-# ranges: short form or full form
-python3 nemla.py -t 192.168.1.1-50
-python3 nemla.py -t 192.168.1.1-192.168.2.20
+# IPv6, and several targets at once
+python3 nemla.py -t 2001:db8::5,192.168.1.10-20
 
-# specific ports + JSON and CSV output
-python3 nemla.py -t 192.168.1.10 -p 22,80,443 --json scan.json --csv scan.csv
+# every report format
+python3 nemla.py -t 192.168.1.10 --json scan.json --csv scan.csv --md scan.md --sarif scan.sarif
 
-# Arabic interface and report
+# gentle scan: 50 connections per second, at most 5,000 probes
+python3 nemla.py -t 192.168.1.0/24 --rate 50 --max-probes 5000
+
+# Arabic or Hebrew interface and report
 python3 nemla.py -t 192.168.1.10 --lang ar
 
-# target blocks ping? skip discovery (like nmap -Pn)
-python3 nemla.py -t 192.168.1.10 --no-ping
+# use it in CI: exit code 3 on any high finding
+python3 nemla.py -t 10.0.0.0/24 --fail-on high
 ```
 
-`sudo` is only needed for ARP discovery and raw-ICMP TTL probing through Scapy. Without it, Nemla falls back to the system `ping` and plain TCP connections.
+`sudo` is only needed for Scapy (real ARP requests, raw ICMP, SYN fingerprinting). Without it Nemla reads the operating system's neighbour cache and falls back to the system `ping` and plain TCP connections.
 
 ## Options
 
 | Option | Description |
 | --- | --- |
-| `-t`, `--target` | IP, hostname, CIDR (`10.0.0.0/24`), short range (`10.0.0.1-50`) or full range (`10.0.0.1-10.0.0.50`) |
+| `-t`, `--target` | IP, hostname, CIDR, `10.0.0.1-50`, `10.0.0.1-10.0.0.50`, IPv6 (`2001:db8::/120`, `fe80::1%eth0`); several separated by commas |
+| `-4` / `-6` | Resolve names to IPv4 or IPv6 only (default: the first IPv4 address, else the first IPv6 one) |
+| `--all-addresses` | Scan every address a name resolves to |
 | `-p`, `--ports` | `22`, `22,80,443`, `1-1000` or a mix |
-| `--top-ports` | Also scan the built-in list of common ports (this is the default when `-p` is omitted) |
+| `--top-ports` | Also scan the built-in list of common ports (the default when `-p` is omitted) |
+| `--udp` | Also probe the common UDP ports |
+| `--udp-ports LIST` | UDP ports to probe (implies `--udp`) |
+| `--udp-timeout S` / `--udp-rate PPS` | Wait per UDP probe (default 1.0) / packets per second (default 200) |
 | `-o`, `--output` | HTML report path (default `nemla_report.html`) |
-| `--json FILE` | Also write the results as JSON |
-| `--csv FILE` | Also write the results as CSV |
+| `--json`, `--csv`, `--md`, `--sarif FILE` | Also write the results in that format |
 | `--no-ping` | Skip host discovery; treat every target as up |
 | `--no-os` | Skip OS fingerprinting |
-| `--no-banner` | Skip banner grabbing and service detection (versions, TLS, web titles) |
-| `--fail-on LEVEL` | Exit with code 3 if any finding is at `low`, `medium` or `high` level or above |
-| `--watch INTERVAL` | Scan again every `90s`, `15m` or `2h` and report what changed; stop with Ctrl+C |
-| `--watch-log FILE` | Append every change found by `--watch` to a JSON-lines file |
-| `--diff OLD.json NEW.json` | Compare two scans saved with `--json` and print what changed |
-| `--fail-on-change` | With `--diff`: exit with code 3 if a host, an open port or a finding appeared |
-| `--guard` | Watch the network for suspicious activity and print alerts until Ctrl+C |
-| `--guard-ports LIST` | Decoy ports to open (default `2222,2323,5901,8888,3307`) |
-| `--guard-interval SECONDS` | Seconds between device checks (default 60, `0` means decoy ports only) |
-| `--guard-log FILE` | Also append alerts to a JSON-lines file |
-| `--threads N` | Worker threads (default 150) |
-| `--timeout S` | TCP connect timeout in seconds (default 0.7) |
-| `--max-hosts N` | Refuse targets bigger than N addresses (default 1024) |
-| `--lang en\|ar\|he` | Language of the CLI, the report and the interface (default `en`) |
-| `--version` | Print the version |
-| `--ui` | Open the 3D interface (also what happens with no arguments) |
-| `--ui-port PORT` | Port for the local interface server (default: any free port) |
-| `--no-browser` | Start the interface server without opening a window |
-| `--keep-alive` | Keep the server running after its window is closed |
-| `--install-launcher` / `--uninstall-launcher` | Linux: add or remove the applications-menu entry |
+| `--no-banner` | Skip banner grabbing and service detection |
+| `--intensity 0-9` | Service detection effort: 0 none, 5 default, 9 tries every protocol |
+| `--threads N` | Global limit of concurrent probes (default 150, at most 2000) |
+| `--per-host N` | Limit of concurrent probes on one host (default 100) |
+| `--timeout S` | TCP connect timeout in seconds, greater than 0 (default 0.7) |
+| `--rate PPS` | Limit TCP connection attempts per second (default unlimited) |
+| `--max-probes N` | Stop after N connections/datagrams in total (default unlimited) |
+| `--max-hosts N` | Refuse targets bigger than N addresses (default 1024, hard limit about a million) |
+| `--fail-on LEVEL` | Exit with code 3 if any finding is at `low`, `medium` or `high` or above |
+| `--watch INTERVAL` / `--watch-log FILE` | Scan again every `90s`, `15m`, `2h` and report changes |
+| `--diff OLD.json NEW.json` / `--fail-on-change` | Compare two saved scans; exit 3 if something appeared |
+| `--guard`, `--guard-ports`, `--guard-interval`, `--guard-log` | Defensive monitoring (see below) |
+| `--lang en\|ar\|he` | Language of the CLI, reports and interface |
+| `-v`, `--verbose` | Debug details on stderr |
+| `--ui`, `--ui-port`, `--no-browser`, `--keep-alive` | The 3D interface |
+| `--install-launcher` / `--uninstall-launcher` | Linux applications-menu entry |
+
+Exit codes: `0` success, `1` an error (bad target, unwritable report), `2` bad arguments, `3` findings at or above `--fail-on` (or changes with `--fail-on-change`).
 
 ## How it works
 
-1. **Discovery** — ARP on local networks (needs Scapy + root). If ARP finds nothing, or the target isn't local, Nemla falls back to ICMP (system `ping`) and TCP probes. A TCP connection *refused* still proves the host is alive.
-2. **Port scan** — concurrent TCP connect scan (`ThreadPoolExecutor`). Service names come from a built-in table with a fallback to the system services database.
-3. **Banner grabbing and detection** — Nemla listens first (SSH, FTP and SMTP greet you). If the port stays silent, it sends a harmless HTTP `HEAD`, but only on HTTP ports and ports with no known non-HTTP service. On open ports it then runs ordinary identification probes: a web `GET` for the page title, a TLS handshake for the certificate, Redis `PING`, Memcached `version`, a PostgreSQL SSL request. Nothing logs in and nothing changes state. Use `--no-banner` to skip all of it.
-4. **OS guess** — heuristic: TTL (≤64 Linux/Unix/macOS, ≤128 Windows, otherwise network device) refined by open ports (RDP/SMB, SSH). Treat it as an estimate.
-5. **Report** — HTML (all scanned data is HTML-escaped, since banners come from untrusted hosts), plus optional JSON/CSV.
+```
+Targets -> Discovery -> bounded scheduler -> TCP / UDP scanning
+        -> service fingerprinting -> OS fingerprinting -> findings -> reports
+```
+
+1. **Targets** become integer spans that yield one address at a time (IPv4 and IPv6). Ports are parsed with every bound checked first.
+2. **Discovery** uses ARP first on private IPv4 networks, then probes every address ARP did not answer with ICMP and TCP; hosts found that way get their MAC from the neighbour cache. ARP is never trusted to be complete, and a warning says when it was not.
+3. **The scheduler** pulls jobs lazily, enforces the global and per-host limits, the rate limit and the probe budget, and stops everything within a tenth of a second when you press Stop or Ctrl+C. Hosts are scanned side by side and each is finished the moment its own jobs are done.
+4. **Service fingerprinting** first reads what the server says on its own, then asks protocol-specific questions (one detector plugin per protocol), tries TLS where it is likely and looks inside the tunnel. Nothing logs in and nothing changes state.
+5. **OS fingerprinting** adds weighted votes from TTL, the TCP SYN-ACK (window, options, DF), banners, open ports, protocol facts and the NIC maker, and keeps the evidence.
+6. **Findings** are raised only for what was observed. A port number alone gives a lower-confidence finding, one severity step down, labelled as such.
+7. **Reports** are rendered from the same data in any language.
+
+### Confidence
+
+Every service and OS result has a `confidence` (0 to 1) and a `heuristic` flag. A banner that names a product and version scores about 0.95, a protocol reply without a version about 0.85, a port number alone 0.3 (`heuristic: true`). OS guesses are capped at 0.70 when they rest on inference alone and 0.92 when a service named the OS itself, because banners can be edited by the host's owner. Nothing is ever reported as certain.
+
+### Findings
+
+Each finding has `id`, `severity`, `title`, `description`, `evidence`, `host`, `port`, `proto`, `remediation` and `confidence`. Examples:
+
+| Finding | Raised when Nemla observed | Severity |
+| --- | --- | --- |
+| `telnet`, `ftp`, `mail_plain`, `smtp_plain_auth`, `basic_auth_plain` | a clear-text service or login on the wire | medium to high |
+| `redis_open`, `memcached`, `es_open` | PING / `version` / `GET /` answered without authentication | high |
+| `smb1`, `smb_signing` | an SMBv1 negotiation accepted; signing not required | high / medium |
+| `rdp_no_nla`, `rdp_weak_security` | the RDP server accepted a session without NLA / with legacy security | medium / high |
+| `tls_expired`, `tls_expiring`, `tls_not_yet_valid` | certificate dates | high / medium |
+| `tls_old`, `tls_weak_sig`, `tls_weak_key`, `tls_selfsigned` | TLS 1.0/1.1 handshake completed; SHA-1/MD5 signature; RSA below 2048 bits; subject equals issuer | medium / low |
+| `ssh_protocol1`, `ssh_weak_crypto` | SSH-1 banner; weak algorithms in the key-exchange proposal | high / medium / low |
+| `snmp_default`, `tftp`, `udp_exposed` | SNMP answered to `public`; TFTP answered; a reflection-capable UDP service on a public address | medium to high |
+| `dns_recursion` | the RA flag in a DNS answer (an open resolver is only possible) | low to medium |
+| `admin_panel`, `remote`, `db`, `files` | an administration console, remote access, database or file sharing reachable | low to high |
+| `http_plain` | plain HTTP **and** HTTPS ports were scanned and none serves TLS (never after scanning port 80 alone) | low |
+
+Exposure on a public address (judged with `is_global`, so shared address space and documentation ranges do not count) is rated higher than on a private network. Findings describe exposure and weak configuration, not exploitable vulnerabilities: Nemla does not match versions against a CVE database and never tries to log in or exploit anything.
+
+## Reports
+
+`--json` is the full record (schema version 2) and is what history stores. It keeps every field of the 1.x output. The CSV keeps the 1.x columns first (`ip,mac,vendor,os_guess,ttl,port,service,banner,product,version`) and appends `proto,state,confidence,os_confidence`; cells that could run as spreadsheet formulas are neutralised. Markdown escapes everything that came from the network. SARIF 2.1.0 has one rule per finding id and one result per finding, with the host and port as location, for GitHub code scanning, DefectDojo and similar dashboards.
+
+## What changed since last time
+
+Nemla remembers your scans (the newest 60, in your Nemla data folder, each with a random UUID) and compares each new scan with the previous one of the same target: hosts that appeared or vanished, ports that opened or closed (TCP and UDP), services whose product, version or protocol changed, a different operating-system family, and findings that appeared or were resolved.
+
+```bash
+python3 nemla.py -t 192.168.1.0/24 --json today.json
+python3 nemla.py --diff yesterday.json today.json      # add --fail-on-change for scheduled checks
+python3 nemla.py -t 192.168.1.0/24 --watch 15m --watch-log changes.jsonl
+```
+
+In the 3D interface open the **History** tab to reopen any saved scan on the map, see its comparison with the previous scan and export it in any format.
+
+## Guard mode (defensive)
+
+Nemla can also watch a network instead of scanning it:
+
+- **Decoy ports.** Ports that no legitimate device has a reason to touch (2222, 2323, 5901, 8888 and 3307 by default). Whatever connects is probing your network.
+- **Unknown devices.** The first check learns your devices by MAC address; a device that was not there before raises an alert (with its maker when known).
+- **ARP changes.** An address that suddenly answers from a different device.
+
+Guard alerts carry a **confidence and the evidence** behind it. A changed ARP binding is **not** proof of spoofing: a replaced network card, a DHCP change or a virtual machine looks the same, so Nemla weighs the gateway, how often the binding flips, whether the new address belongs to a known device and whether the old one still answers, and never goes above 0.85. Guard only watches: it never attacks back, never scans other machines and never changes your firewall (for a device you want to block it prints the exact command and leaves running it to you).
+
+```bash
+python3 nemla.py --guard [--guard-log alerts.jsonl]
+```
+
+## The 3D interface
+
+Run Nemla with no arguments and it opens its own window: a 3D map of your network, a scan form, a live host list, an inspector and a history of saved scans.
+
+![The Nemla 3D interface showing the demo colony](docs/ui-3d.png)
+
+```bash
+python3 nemla.py            # opens the 3D interface
+```
+
+- **Colony view:** this computer is the nest, hosts float around it, every open port orbits its host coloured by service type. Drag to orbit, scroll to zoom, click a host.
+- **Live progress** with a single global progress bar, hosts finishing side by side.
+- **Inspector:** OS guess with its confidence and evidence; every port with its confidence (a `~` marks a guess); every finding with *why it matters*, *how to fix it* and the evidence.
+- **History and diff, Guard status and alerts with their evidence, export** (HTML, JSON, CSV, Markdown, SARIF).
+- **English, Arabic and Hebrew**, right-to-left included, keyboard accessible.
+
+### Add Nemla to the Linux applications menu
+
+```bash
+python3 nemla.py --install-launcher     # menu entry, icon and a `nemla` command, all under ~/.local
+python3 nemla.py --uninstall-launcher
+```
+
+In a Chromium-family browser it opens as its own window, otherwise in your default browser; closing the window stops Nemla. Browsers refuse to start as root, so for ARP discovery run `sudo python3 nemla.py --no-browser` and open the printed address. Over SSH forward the port (`ssh -L PORT:127.0.0.1:PORT host`).
+
+## Security
+
+Nemla scans hostile networks and shows what strangers wrote, so it is hardened accordingly. Each item below has tests.
+
+- **Local server:** listens on `127.0.0.1` only; a random per-launch token (header for writes, address for reads); `Host`, `Origin` and `Sec-Fetch-Site` checks (DNS rebinding, cross-site requests); body size cap; idle-connection timeouts; ceilings on connections and event streams; strict Content-Security-Policy; no traceback ever leaves the server; scan parameters are validated and clamped; the first scan needs consent.
+- **Malicious banners and certificates:** every read is bounded in size and time; text from the network is stripped of control characters, terminal escapes and bidi overrides before it is logged or stored; the DER certificate parser is fuzz-tested and only ever raises one error type; the page renders with `textContent`, reports escape every field (HTML entities, CSV formula guard, Markdown entities).
+- **Resource exhaustion:** hostile port ranges (`1-99999999999`) are refused before they are expanded; a million-address target is a few integers; the scheduler pulls jobs lazily; deeply nested JSON is refused; history files are size-capped.
+- **File system:** history and report files are written to a temporary file and renamed into place (private permissions); ids are UUIDs validated before they touch a path; static files cannot leave the web folder.
+- **Commands:** no shell anywhere; `ping` receives only validated addresses; the Linux launcher quotes every path.
+- **Races:** the language of a scan is per thread (no global switching), counters are locked.
+- **Unsafe deserialisation:** only `json.loads` on untrusted data; no pickle, eval or exec (a test scans the source for them).
+- **SSRF:** probes never follow redirects or URLs found in banners; a target is only what you typed.
 
 ## Limitations
 
-- IPv4 only, TCP connect scan only (no SYN/UDP scanning).
-- Findings describe exposure, not vulnerabilities: Nemla does not match versions against a CVE database.
-- OS detection is a TTL-and-ports heuristic, not real fingerprinting.
-- Firewalls that drop packets will make hosts look down. Try `--no-ping` and a larger `--timeout`.
+- TCP is a connect scan (no SYN scan). UDP replies are only understood for the protocols above; `open|filtered` is common on UDP, and Linux rate-limits ICMP replies, so a fast scan of a Linux host reports many closed ports that way.
+- Findings describe exposure and configuration, not exploitable vulnerabilities. There is no CVE matching.
+- OS detection is an estimate from several weak signals. The TCP fingerprint needs Scapy and root and its shapes are the widely documented ones, not a full database.
+- SMB and RDP probes follow the published protocols but were verified against test servers, not every real Windows version; treat their findings as leads to confirm.
+- IPv6 discovery of unknown neighbours is not attempted: give explicit addresses or ranges.
+- Firewalls that drop packets make hosts look down. Try `--no-ping` and a larger `--timeout`. On Windows a refused connection takes about two seconds to be reported.
 
 ## Responsible use
 
-**Only scan systems and networks you own or have explicit written permission to test.** Unauthorized scanning may violate laws, provider terms and organizational policy. Nemla is a reconnaissance tool: it discovers and reports, it does not exploit anything, and that is intentional. The author is not responsible for misuse.
+**Only scan systems and networks you own or have explicit written permission to test.** Unauthorized scanning may violate laws, provider terms and organizational policy. Nemla is a reconnaissance tool: it discovers and reports, it does not exploit anything. The only check near credentials is deliberately minimal: SNMP is asked once with the well-known community `public`, and no login of any kind is ever attempted. The author is not responsible for misuse.
+
+## Upgrading from 1.x
+
+`python3 nemla.py ...` and `import nemla` keep working, and every option and output field of 1.x is still there (new fields were added). Changes you may notice: IPv6 targets are accepted; several targets can be given at once; scan ids are UUIDs (old timestamp ids still load); `history` and `guard` moved to `nemla.history` and `nemla.guard` (the `nemla_ui.*` names still resolve to the same modules); the `http_plain` finding needs proof that HTTPS was scanned; `--timeout 0` and other invalid numbers are now rejected.
 
 ## Development
 
 ```bash
-pip install pytest
+pip install pytest pyflakes
+python -m pyflakes nemla nemla_ui nemla.py
 python -m pytest -q
 ```
 
-The tests run entirely against `127.0.0.1` with throw-away local servers. They also cover the interface server (token, host and origin checks, event stream, reports) and the Linux launcher.
+The tests run entirely against loopback with throw-away servers (TCP, UDP, TLS, IPv6 when available): every protocol detector, the scheduler and cancellation, hostile input, reports in every format, history and diff, the local server's security and the Guard. See [docs/architecture.md](docs/architecture.md) for how to add a detector or a finding.
 
 ## Roadmap
 
-- [x] JSON and CSV output
-- [x] English / Arabic / Hebrew interface
-- [x] Service and version detection, TLS certificate details, findings and `--fail-on`
-- [x] Guard mode: decoy ports, unknown devices and ARP changes
-- [x] Scan history, "what changed" comparison, `--diff` and `--watch`
-- [x] Unit and end-to-end tests, CI
-- [x] 3D interface, Linux applications-menu launcher and the Nemla identity
-- [ ] Browse and reopen past scans inside the interface (the comparison card and `/api/history` already exist)
-- [ ] IPv6 support
-- [x] MAC vendor names for well-known platforms (a small list; the full IEEE registry is still open)
+- [x] JSON and CSV output, English / Arabic / Hebrew, findings and `--fail-on`, Guard, history, `--diff` and `--watch`, 3D interface, Linux launcher
+- [x] Architecture split, plugin detectors, IPv6, UDP, OS fingerprinting with confidence, Markdown and SARIF, bounded scheduler
+- [ ] Full IEEE OUI registry for MAC vendors
 - [ ] Scan profiles and a config file
-- [ ] Richer service detection (plugin-based)
 - [ ] Interactive HTML report (sorting, filtering)
+- [ ] IPv6 neighbour discovery on the local link
+- [ ] More UDP protocols and SNMPv3
 
 ## Contributing
 
-Issues and pull requests are welcome. Please keep changes small, add a test where it makes sense, and keep the tool recon-only. When reporting a bug, include your OS, Python version, the command you ran, and the error output (without private IPs or credentials).
+Issues and pull requests are welcome. Please keep changes small, add a test, and keep the tool recon-only. When reporting a bug, include your OS, Python version, the command you ran and the error output (without private IPs or credentials).
 
 ## License
 

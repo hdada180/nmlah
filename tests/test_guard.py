@@ -41,7 +41,7 @@ MAC_OS_ARP = """? (10.0.0.1) at a4:2b:b0:1c:9e:10 on en0 ifscope [ethernet]
 
 @pytest.mark.parametrize("text, expected", [
     (LINUX_ARP, {"10.0.0.1": "a4:2b:b0:1c:9e:10"}),
-    (IP_NEIGH, {"10.0.0.1": "a4:2b:b0:1c:9e:10"}),
+    (IP_NEIGH, {"10.0.0.1": "a4:2b:b0:1c:9e:10", "fe80::1": "a4:2b:b0:1c:9e:10"}),  # IPv6 neighbours count too
     (WINDOWS_ARP, {"10.0.0.1": "a4:2b:b0:1c:9e:10"}),
     (MAC_OS_ARP, {"10.0.0.1": "a4:2b:b0:1c:9e:10", "10.0.0.5": "00:1a:2b:03:04:05"}),
     ("", {}),
