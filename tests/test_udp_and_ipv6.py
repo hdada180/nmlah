@@ -116,6 +116,85 @@ def test_mdns(udp_server, monkeypatch):
     assert udp.scan_udp_port("127.0.0.1", port, 1.0)["detected"] == "mdns"
 
 
+def test_snmp_response_without_an_octet_string_tag_is_empty():
+    request_id = b"\x4e\x45\x4d\x4c"
+    reply = b"\x30\x00\xa2\x02\x04" + request_id + udp._SNMP_SYSDESCR + b"\x05\x00"   # 0x05 (NULL), not 0x04 (OCTET STRING)
+    assert udp.parse_snmp_response(reply, request_id) == ""
+
+
+def test_snmp_response_with_a_long_form_length_is_parsed():
+    request_id = b"\x4e\x45\x4d\x4c"
+    reply = b"\x30\x00\xa2\x02\x04" + request_id + udp._SNMP_SYSDESCR + b"\x04\x81\x05hello"
+    assert udp.parse_snmp_response(reply, request_id) == "hello"
+
+
+@pytest.mark.parametrize("indicator, rest", [
+    (b"\x80", b""),                 # count 0 (the reserved "indefinite length" form, refused outright)
+    (b"\x83", b"\x00\x00\x00"),     # count 3: this parser only ever follows 1 or 2 length octets
+    (b"\x82", b"\x00"),             # count 2, but only 1 octet actually follows: truncated
+])
+def test_snmp_response_with_an_unusable_long_form_length_is_empty(indicator, rest):
+    request_id = b"\x4e\x45\x4d\x4c"
+    reply = b"\x30\x00\xa2\x02\x04" + request_id + udp._SNMP_SYSDESCR + b"\x04" + indicator + rest
+    assert udp.parse_snmp_response(reply, request_id) == ""
+
+
+def test_each_probe_rejects_a_reply_that_does_not_validate(udp_server, monkeypatch):
+    """The happy path for each of these is already covered elsewhere; this is what happens when a UDP service on
+    that port answers, but not with anything the probe recognises - a real possibility since UDP has no handshake
+    to rule out talking to the wrong protocol."""
+    fixed_cases = [
+        (udp._mdns_probe, lambda d, a, s: b"\x01\x02"),                             # not even DNS-shaped
+        (udp._ntp_probe, lambda d, a, s: b"\x00" * 10),                             # too short for an NTP header
+        (udp._ssdp_probe, lambda d, a, s: b"not an HTTP or NOTIFY response line"),
+        (udp._netbios_probe, lambda d, a, s: b"\x00" * 10),                         # too short for a name table
+        (udp._tftp_probe, lambda d, a, s: struct.pack("!H", 99) + b"junk"),         # neither DATA (3) nor ERROR (5)
+        (udp._rpcbind_probe, lambda d, a, s: b"\x00\x00\x00\x00" + struct.pack("!I", 1) + b"\x00" * 16),  # wrong xid
+        (udp._memcached_probe, lambda d, a, s: b"12345678ERROR\r\n"),               # no VERSION line
+        (udp._snmp_probe, lambda d, a, s: b"not snmp at all"),
+    ]
+    for factory, handler in fixed_cases:
+        port = udp_server(handler)
+        use_probe(monkeypatch, port, factory)
+        rec = udp.scan_udp_port("127.0.0.1", port, 0.3)
+        assert rec["state"] == "open" and rec["detected"] == "unknown", factory.__name__
+
+
+def test_netbios_stops_at_the_first_entry_a_hostile_reply_cannot_fill(udp_server, monkeypatch):
+    """The name table claims 2 entries but only has data for 1: parsing stops there instead of reading past the
+    end of the reply, and the entry that WAS complete is still used rather than discarding everything."""
+    def handler(request, addr, sock):
+        tid = request[:2]
+        header = tid + struct.pack("!HHHHH", 0x8400, 0, 1, 0, 0) + request[12:12 + 34] + struct.pack("!HHIH", 0x21, 1, 0, 0)
+        one_entry = b"A" * 15 + b"\x00" + struct.pack("!H", 0)
+        return header + bytes([2]) + one_entry + b"short"      # 5 bytes left where the 2nd 18-byte entry should be
+    port = udp_server(handler)
+    use_probe(monkeypatch, port, udp._netbios_probe)
+    rec = udp.scan_udp_port("127.0.0.1", port, 0.3)
+    assert rec["detected"] == "netbios-ns" and rec["details"]["netbios_name"] == "AAAAAAAAAAAAAAA"
+
+
+def test_scan_udp_port_respects_the_probe_budget():
+    from nemla.scanning.scheduler import ProbeBudget
+    budget = ProbeBudget(1)
+    assert budget.take()                              # use up the one unit this probe is allowed
+    assert udp.scan_udp_port("127.0.0.1", 12345, 0.2, budget=budget) is None
+
+
+def test_scan_udp_port_survives_a_check_function_that_crashes(udp_server, monkeypatch):
+    diagnostics = nemla.Diagnostics()
+    port = udp_server(lambda d, a, s: b"anything")
+
+    def hostile(ip):
+        def check(reply):
+            raise RuntimeError("hostile reply crashed the parser")
+        return b"probe", check
+    use_probe(monkeypatch, port, hostile)
+    rec = udp.scan_udp_port("127.0.0.1", port, 0.3, diagnostics=diagnostics)
+    assert rec["state"] == "open" and rec["detected"] == "unknown"
+    assert diagnostics.as_list()[0]["code"] == "detector_error"
+
+
 # --------------------------------------------------------------------------
 # the four states
 # --------------------------------------------------------------------------
