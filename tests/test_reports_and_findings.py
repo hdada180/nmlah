@@ -286,6 +286,53 @@ def test_report_files_are_written_atomically(tmp_path):
         assert oct(target.stat().st_mode & 0o777) == "0o644"
 
 
+def test_write_atomic_tolerates_a_filesystem_that_refuses_chmod(tmp_path, monkeypatch):
+    import os as os_mod
+    real_chmod = os_mod.chmod
+
+    def refuses(path, mode):
+        if str(path).endswith(".tmp"):
+            raise OSError("chmod not supported on this filesystem")
+        real_chmod(path, mode)
+    monkeypatch.setattr(os_mod, "chmod", refuses)
+    target = tmp_path / "r.html"
+    reports.write_atomic(str(target), b"hello")
+    assert target.read_bytes() == b"hello"                     # the write still lands, just without the mode set
+
+
+def test_write_atomic_cleans_up_its_temp_file_when_the_final_rename_fails(tmp_path, monkeypatch):
+    import os as os_mod
+
+    def refuses(*a, **k):
+        raise OSError("simulated failure renaming into place")
+    monkeypatch.setattr(os_mod, "replace", refuses)
+    target = tmp_path / "r.html"
+    with pytest.raises(OSError):
+        reports.write_atomic(str(target), b"hello")
+    assert not target.exists() and list(tmp_path.iterdir()) == []          # no half-written file, no leftover temp file
+
+
+def test_write_atomic_survives_even_when_cleaning_up_the_temp_file_also_fails(tmp_path, monkeypatch):
+    """Both os.replace and the cleanup's own os.unlink fail: the original error must still propagate, not a
+    secondary one from the failed cleanup, and write_atomic must not raise anything the caller didn't ask for."""
+    import os as os_mod
+    monkeypatch.setattr(os_mod, "replace", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+    monkeypatch.setattr(os_mod, "unlink", lambda *a, **k: (_ for _ in ()).throw(OSError("already gone")))
+    with pytest.raises(OSError, match="disk full"):
+        reports.write_atomic(str(tmp_path / "r.html"), b"hello")
+
+
+def test_write_json_and_write_csv_convenience_wrappers(tmp_path):
+    meta, hosts = evil_scan()
+    json_path, csv_path = tmp_path / "r.json", tmp_path / "r.csv"
+    reports.write_json(str(json_path), meta, hosts)
+    reports.write_csv(str(csv_path), hosts)
+    assert json.loads(json_path.read_text(encoding="utf-8"))["hosts"]
+    raw = csv_path.read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf")                    # the same BOM --csv gets, via report_bytes
+    assert raw.decode("utf-8-sig").startswith("ip,mac")
+
+
 def test_report_formats_are_negotiated_by_name():
     meta, hosts = evil_scan()
     for fmt, needle in (("html", b"<!DOCTYPE"), ("json", b'"schema_version"'), ("csv", b"ip,mac"), ("md", b"# "),

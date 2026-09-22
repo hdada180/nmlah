@@ -75,4 +75,6 @@ def write_json(path: str, meta: dict, hosts: list, lang=None) -> None:
 
 
 def write_csv(path: str, hosts: list, lang=None) -> None:
-    write_atomic(path, csv_text(hosts, lang).encode("utf-8"))
+    # utf-8-sig, matching report_bytes: the BOM makes Excel read UTF-8. Found by testing this wrapper directly -
+    # it disagreed with what --csv (which goes through report_bytes) actually writes.
+    write_atomic(path, csv_text(hosts, lang).encode("utf-8-sig"))
