@@ -349,3 +349,167 @@ def test_window_and_ui_settings(ui):
     app, port = ui
     info = json.loads(call(port, "/api/info", token=app.token)[2])
     assert info["version"] == nemla.__version__ and "sarif" in info["formats"] and info["udp_ports"]
+
+
+# --------------------------------------------------------------------------
+# hostile input the routes above did not already cover
+# --------------------------------------------------------------------------
+
+def test_a_content_length_that_is_not_a_number_is_treated_as_no_body(ui):
+    app, port = ui
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.putrequest("POST", "/api/scan")
+    conn.putheader("X-Nemla-Token", app.token)
+    conn.putheader("Content-Length", "not-a-number")
+    conn.endheaders()
+    res = conn.getresponse()
+    body = json.loads(res.read())
+    conn.close()
+    # a bad Content-Length is read as no body at all: an empty {} reaches parse_scan and fails on
+    # missing consent, the ordinary validation error - not a 500 and not a hang on the malformed header
+    assert res.status == 403 and "confirm" in body["error"]
+
+
+def test_events_for_a_job_that_is_not_the_current_one_is_no_such_scan(ui):
+    app, port = ui
+    assert call(port, "/api/events?job=not-the-real-job-id", token=app.token)[0] == 404
+
+
+def test_a_non_numeric_last_event_id_on_guard_events_is_treated_as_the_start(ui):
+    app, port = ui
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+    conn.putrequest("GET", f"/api/guard/events?k={app.token}")
+    conn.putheader("Last-Event-ID", "not-a-number")
+    conn.endheaders()
+    res = conn.getresponse()
+    assert res.status == 200          # accepted as a stream, not a 500 on the malformed header
+    conn.close()
+
+
+def test_a_non_numeric_last_event_id_on_the_job_stream_is_treated_as_the_start(ui, tcp_server):
+    app, port = ui
+    greeter = tcp_server(lambda conn: (conn.sendall(b"SSH-2.0-NemlaLab\r\n"), conn.close()))
+    body = {"target": "127.0.0.1", "profile": "custom", "ports": str(greeter), "no_ping": True,
+            "no_os": True, "authorized": True}
+    status, _, data = call(port, "/api/scan", "POST", app.token, body)
+    assert status == 200
+    job = json.loads(data)["job"]
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.putrequest("GET", f"/api/events?job={job}&k={app.token}")
+    conn.putheader("Last-Event-ID", "not-a-number")
+    conn.endheaders()
+    res = conn.getresponse()
+    raw = res.read()          # replays from the start rather than crashing; the scan is short-lived, so this returns
+    conn.close()
+    assert res.status == 200 and b"data: " in raw
+
+
+# --------------------------------------------------------------------------
+# BoundedServer: the connection slot is released even when a request crashes
+# --------------------------------------------------------------------------
+
+def test_a_crashing_request_still_releases_its_connection_slot(tmp_path, monkeypatch):
+    """socketserver swallows an exception from process_request itself (its own handle_error, printed to stderr) -
+    a live socket cannot observe that from the client side. Call it directly instead."""
+    app = server.App(nemla, data_dir=tmp_path)
+    httpd = server.BoundedServer(("127.0.0.1", 0), server.make_handler(app))
+    try:
+        def boom(self, request, client_address):
+            raise RuntimeError("simulated failure inside the real handler")
+        monkeypatch.setattr(server.ThreadingHTTPServer, "process_request", boom)
+        with pytest.raises(RuntimeError):
+            httpd.process_request(object(), ("127.0.0.1", 1))
+        # the slot the failed attempt held was released, not leaked
+        assert httpd._slots.acquire(blocking=False) is True
+        httpd._slots.release()
+    finally:
+        httpd.server_close()
+
+
+# --------------------------------------------------------------------------
+# opening a window: platform branches, no real browser or display needed
+# --------------------------------------------------------------------------
+
+def test_has_display_follows_the_environment_on_linux(monkeypatch):
+    monkeypatch.setattr(server.sys, "platform", "linux")
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    assert server.has_display() is False
+    monkeypatch.setenv("DISPLAY", ":0")
+    assert server.has_display() is True
+
+
+def test_has_display_is_always_true_off_linux(monkeypatch):
+    monkeypatch.setattr(server.sys, "platform", "win32")
+    monkeypatch.delenv("DISPLAY", raising=False)
+    assert server.has_display() is True
+
+
+def test_open_ui_window_does_nothing_without_a_display(monkeypatch):
+    monkeypatch.setattr(server, "has_display", lambda: False)
+    assert server.open_ui_window("http://127.0.0.1:1/") is False
+
+
+def test_open_ui_window_prefers_a_chromium_app_window_on_linux(monkeypatch):
+    monkeypatch.setattr(server, "has_display", lambda: True)
+    monkeypatch.setattr(server.sys, "platform", "linux")
+    monkeypatch.setattr(server, "app_window_command", lambda url: ["chromium", f"--app={url}"])
+    started = []
+    monkeypatch.setattr(server.subprocess, "Popen", lambda cmd, **kw: started.append(cmd))
+    assert server.open_ui_window("http://127.0.0.1:1/") is True
+    assert started == [["chromium", "--app=http://127.0.0.1:1/"]]
+
+
+def test_open_ui_window_falls_back_to_the_default_browser_when_the_app_window_fails(monkeypatch):
+    monkeypatch.setattr(server, "has_display", lambda: True)
+    monkeypatch.setattr(server.sys, "platform", "linux")
+    monkeypatch.setattr(server, "app_window_command", lambda url: ["chromium", f"--app={url}"])
+
+    def refuses(cmd, **kw):
+        raise OSError("no such file")
+    monkeypatch.setattr(server.subprocess, "Popen", refuses)
+    monkeypatch.setattr(server.webbrowser, "open", lambda url: True)
+    assert server.open_ui_window("http://127.0.0.1:1/") is True
+
+
+def test_open_ui_window_uses_the_default_browser_off_linux(monkeypatch):
+    monkeypatch.setattr(server, "has_display", lambda: True)
+    monkeypatch.setattr(server.sys, "platform", "win32")
+    opened = []
+    monkeypatch.setattr(server.webbrowser, "open", lambda url: opened.append(url) or True)
+    assert server.open_ui_window("http://127.0.0.1:1/") is True and opened == ["http://127.0.0.1:1/"]
+
+
+def test_open_ui_window_is_false_when_no_browser_can_be_reached(monkeypatch):
+    monkeypatch.setattr(server, "has_display", lambda: True)
+    monkeypatch.setattr(server.sys, "platform", "win32")
+
+    def no_browser(url):
+        raise server.webbrowser.Error("no browser")
+    monkeypatch.setattr(server.webbrowser, "open", no_browser)
+    assert server.open_ui_window("http://127.0.0.1:1/") is False
+
+
+# --------------------------------------------------------------------------
+# serve(): the real entry point (every other test here bypasses it)
+# --------------------------------------------------------------------------
+
+def test_serve_refuses_a_port_already_in_use(tmp_path):
+    taken = socket.socket()
+    taken.bind(("127.0.0.1", 0))
+    taken.listen(1)
+    port = taken.getsockname()[1]
+    try:
+        assert server.serve(nemla, port=port, open_window=False) == 1
+    finally:
+        taken.close()
+
+
+def test_serve_runs_until_ctrl_c_and_cleans_up(monkeypatch, tmp_path):
+    """open_window=False so this never touches a real browser; Ctrl+C is simulated so the test does not block."""
+    monkeypatch.setattr(server.BoundedServer, "serve_forever", lambda self, poll_interval=0.25: (_ for _ in ()).throw(KeyboardInterrupt))
+    logged = []
+    monkeypatch.setattr(nemla, "log", logged.append)
+    code = server.serve(nemla, port=0, open_window=False, keep_alive=True)
+    assert code == 0
+    assert any("Nemla 3D interface: http://127.0.0.1:" in line for line in logged)
