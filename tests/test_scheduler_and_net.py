@@ -83,6 +83,22 @@ def test_a_busy_host_does_not_starve_the_others():
     assert order.index("fast") < len(order) - 1 and "fast" in order[:6]
 
 
+def test_scan_host_ports_reports_progress_and_open_ports_in_order(tcp_server, closed_port):
+    """scan_host_ports itself - the single-host convenience wrapper other code calls the scheduler directly
+    instead of - was only ever referenced by a public-names test, never actually called."""
+    from nemla.scanning.tcp import scan_host_ports
+    first = tcp_server(lambda c: c.close())
+    second = tcp_server(lambda c: (c.sendall(b"SSH-2.0-OpenSSH_9.6\r\n"), c.close()))
+    ports = sorted([closed_port, second, first])          # deliberately out of "open" order
+    seen_ports, progress = [], []
+    found = scan_host_ports("127.0.0.1", ports, workers=4, timeout=0.4, grab=True,
+                            on_port=lambda r: seen_ports.append(r["port"]),
+                            on_progress=lambda done, total: progress.append((done, total)))
+    assert [r["port"] for r in found] == sorted([first, second])       # open only, sorted by port number
+    assert sorted(seen_ports) == sorted([first, second])
+    assert progress[-1] == (len(ports), len(ports)) and len(progress) == len(ports)
+
+
 def test_a_failing_job_never_stops_the_scan_and_is_counted():
     diagnostics = nemla.Diagnostics()
 
@@ -296,6 +312,35 @@ def test_log_lines_cannot_carry_terminal_escapes(capsys):
     nemla.log("banner said \x1b[2J\x1b]0;evil\x07 hello\r\nfake line")
     out = capsys.readouterr().out
     assert "\x1b" not in out and "\x07" not in out and out.count("\n") == 1
+
+
+def test_log_survives_a_console_that_refuses_to_print(monkeypatch):
+    """The desktop launcher runs with no console at all on some platforms: log() must not crash the scan over it."""
+    import builtins
+
+    def refuses(*a, **k):
+        raise OSError("no console")
+    monkeypatch.setattr(builtins, "print", refuses)
+    nemla.log("this must not raise")             # no assertion needed beyond "did not raise"
+
+
+def test_enable_debug_sends_the_debug_log_to_stderr_exactly_once(capsys):
+    for handler in list(nemla_log.logger.handlers):
+        if getattr(handler, "_nemla_debug", False):
+            nemla_log.logger.removeHandler(handler)
+    saved_level = nemla_log.logger.level
+    try:
+        nemla_log.enable_debug()
+        nemla_log.enable_debug()                 # calling it again must not add a second handler
+        debug_handlers = [h for h in nemla_log.logger.handlers if getattr(h, "_nemla_debug", False)]
+        assert len(debug_handlers) == 1 and nemla_log.logger.level == nemla_log.logging.DEBUG
+        nemla_log.logger.debug("a debug line")
+        assert "a debug line" in capsys.readouterr().err
+    finally:
+        for handler in list(nemla_log.logger.handlers):
+            if getattr(handler, "_nemla_debug", False):
+                nemla_log.logger.removeHandler(handler)
+        nemla_log.logger.setLevel(saved_level)
 
 
 # --------------------------------------------------------------------------

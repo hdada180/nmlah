@@ -8,8 +8,8 @@ import time
 import pytest
 
 import nemla
-from nemla.fingerprint import databases, dns, rdp, smb, ssh
-from nemla.fingerprint.base import BudgetExhausted, Probe
+from nemla.fingerprint import databases, dns, rdp, smb, smtp, ssh, tls
+from nemla.fingerprint.base import BudgetExhausted, Detection, Probe
 from nemla.net import Cancelled
 
 from test_detect import TEST_CERT, TEST_KEY
@@ -171,6 +171,33 @@ def test_smtp_extensions(tcp_server):
     assert not [f for f in nemla.assess_host({"ip": "10.0.0.5", "open_ports": [res]}) if f["severity"] != "info"]
 
 
+def test_smtp_ehlo_host_is_recorded_when_the_banner_named_no_product(tcp_server):
+    """A generic banner (no recognizable product) still lets refine() learn something: the name the server
+    gives itself in the EHLO reply."""
+    port = tcp_server(line_server(b"220 ESMTP ready\r\n", {
+        "EHLO": b"250-mail.example.com\r\n250 SIZE 100\r\n", "QUIT": b"221 bye\r\n"}))
+    res = scan(port)
+    # refine() matches against the reply uppercased (same as its STARTTLS/AUTH checks), so the captured
+    # hostname comes back upper too - this pins that actual behavior rather than the nicer-looking one
+    assert not res.get("product") and res["details"]["ehlo_host"] == "MAIL.EXAMPLE.COM"
+
+
+def test_smtp_refine_keeps_the_passive_detection_when_the_second_connection_fails(closed_port):
+    detection = Detection("smtp", "SMTP", "Exim", "4.96", 0.7, "banner", "220 mx ESMTP Exim 4.96", "", "", False, {})
+    result = smtp.Smtp().refine(Probe("127.0.0.1", closed_port, timeout=0.3), detection)
+    assert result is detection and result.extra == {}
+
+
+@pytest.mark.parametrize("exc", [Cancelled(), BudgetExhausted("probe budget exhausted")])
+def test_smtp_refine_lets_cancellation_and_budget_exhaustion_propagate(monkeypatch, exc):
+    def raise_it(**kw):
+        raise exc
+    probe = Probe("127.0.0.1", 25, timeout=0.3)
+    monkeypatch.setattr(probe, "connect", raise_it)
+    with pytest.raises(type(exc)):
+        smtp.Smtp().refine(probe, Detection("smtp", "SMTP", "", "", 0.5, "banner", "", "", "", False, {}))
+
+
 def test_smtp_plain_auth_without_starttls_is_a_finding(tcp_server):
     port = tcp_server(line_server(b"220 mx ESMTP Exim 4.96\r\n", {
         "EHLO": b"250-mx\r\n250-AUTH LOGIN\r\n250 SIZE 100\r\n", "QUIT": b"221 bye\r\n"}))
@@ -178,6 +205,38 @@ def test_smtp_plain_auth_without_starttls_is_a_finding(tcp_server):
     assert (res["product"], res["version"]) == ("Exim", "4.96")
     found = {f["id"]: f for f in nemla.assess_host({"ip": "10.0.0.5", "open_ports": [res]})}
     assert found["smtp_plain_auth"]["severity"] == "medium" and "LOGIN" in found["smtp_plain_auth"]["evidence"]
+
+
+def test_pop3_passive_needs_a_recognizable_word_on_a_non_standard_port():
+    from nemla.fingerprint.mail import Imap, Pop3
+    probe = Probe("127.0.0.1", 12345, banner=b"+OK server up\r\n")           # no POP3/Dovecot/Courier/Cyrus/mail/ready
+    assert Pop3().passive(probe) is None
+    # on one of POP3's own ports the same banner is still accepted (the port itself is the evidence)
+    assert Pop3().passive(Probe("127.0.0.1", 110, banner=b"+OK server up\r\n")) is not None
+    assert Imap().passive(probe) is None                                     # unrelated: no "* OK" greeting at all
+
+
+@pytest.mark.parametrize("cls,detected", [(0, "pop3"), (1, "imap")])
+def test_pop3_and_imap_refine_keep_the_passive_detection_when_the_second_connection_fails(closed_port, cls, detected):
+    from nemla.fingerprint.mail import Imap, Pop3
+    detector = (Pop3(), Imap())[cls]
+    detection = Detection(detected, detected.upper(), "Dovecot", "", 0.7, "banner", "", "", "", False, {})
+    result = detector.refine(Probe("127.0.0.1", closed_port, timeout=0.3), detection)
+    assert result is detection and result.extra == {}
+
+
+@pytest.mark.parametrize("cls", [0, 1])
+@pytest.mark.parametrize("exc", [Cancelled(), BudgetExhausted("probe budget exhausted")])
+def test_pop3_and_imap_refine_let_cancellation_and_budget_exhaustion_propagate(monkeypatch, exc, cls):
+    from nemla.fingerprint.mail import Imap, Pop3
+    detector = (Pop3(), Imap())[cls]
+
+    def raise_it(**kw):
+        raise exc
+    probe = Probe("127.0.0.1", 110, timeout=0.3)
+    monkeypatch.setattr(probe, "connect", raise_it)
+    with pytest.raises(type(exc)):
+        detector.refine(probe, Detection("x", "X", "", "", 0.5, "banner", "", "", "", False, {}))
 
 
 def test_pop3_and_imap(tcp_server):
@@ -545,6 +604,239 @@ def test_server_accepting_tls10_is_detected_when_this_openssl_can_speak_it(tcp_s
     found = [f for f in nemla.assess_host({"ip": "10.0.0.5", "open_ports": [{"port": 443, "service": "HTTPS", "banner": "", "tls": tls}]})
              if f["id"] == "tls_old"]
     assert found and "TLSv1" in found[0]["evidence"]
+
+
+# A throw-away self-signed EC certificate with a SAN extension (nemla.test, www.nemla.test, 127.0.0.1),
+# generated once with openssl and never used for anything but parsing in this test.
+SAN_CERT = """-----BEGIN CERTIFICATE-----
+MIIBrzCCAVWgAwIBAgIUZNWOSvQtZG3dKV/w0492sHlzjqAwCgYIKoZIzj0EAwIw
+FTETMBEGA1UEAwwKbmVtbGEudGVzdDAgFw0yNjA5MjIxNDUwNThaGA8yMTI2MDgy
+OTE0NTA1OFowFTETMBEGA1UEAwwKbmVtbGEudGVzdDBZMBMGByqGSM49AgEGCCqG
+SM49AwEHA0IABLMvCpJsQCiuGYgtMTbpWenuihMZpoImbwsmNZzRWAyXU0Maz2i7
+G9nEXgldgB+ooW8b1DezSaRseaLO2TPcDjGjgYAwfjAdBgNVHQ4EFgQU02PPFv5h
+nM4SD+3r2AQTEsxlCgQwHwYDVR0jBBgwFoAU02PPFv5hnM4SD+3r2AQTEsxlCgQw
+DwYDVR0TAQH/BAUwAwEB/zArBgNVHREEJDAiggpuZW1sYS50ZXN0gg53d3cubmVt
+bGEudGVzdIcEfwAAATAKBggqhkjOPQQDAgNIADBFAiB0BcNrgwxjUr/oigL0JUXp
+Swza2uBGjcy9x6DkG3mnCQIhAN+sB3rvcYeDjLtzRLCs8kmCVcOWvR6eccBYTVaN
++JSe
+-----END CERTIFICATE-----
+"""
+
+
+def test_certificate_facts_include_the_san_list():
+    der = ssl.PEM_cert_to_DER_cert(SAN_CERT)
+    facts = tls.certificate_facts(der)
+    assert facts["san"] == ["nemla.test", "www.nemla.test", "127.0.0.1"]
+
+
+class FakeTlsContext:
+    def __init__(self, minimum_version, maximum_version):
+        self.minimum_version, self.maximum_version = minimum_version, maximum_version
+
+
+def test_accepts_refuses_a_version_this_openssl_build_cannot_even_attempt(monkeypatch):
+    # tls_context is asked for (5, 5) but hands back a context that settled on something else
+    monkeypatch.setattr(tls, "tls_context", lambda low, high: FakeTlsContext(3, 3))
+    assert tls._accepts(Probe("127.0.0.1", 443, timeout=0.3), 5, 5) is False
+
+
+def test_accepts_true_on_a_successful_handshake(monkeypatch):
+    monkeypatch.setattr(tls, "tls_context", FakeTlsContext)
+    closed = []
+
+    class FakeConn:
+        def close(self):
+            closed.append(1)
+    monkeypatch.setattr(tls, "open_conn", lambda *a, **k: FakeConn())
+    assert tls._accepts(Probe("127.0.0.1", 443, timeout=0.3), 5, 5) is True and closed == [1]
+
+
+@pytest.mark.parametrize("exc", [Cancelled(), BudgetExhausted("probe budget exhausted")])
+def test_accepts_lets_cancellation_and_budget_exhaustion_propagate(monkeypatch, exc):
+    monkeypatch.setattr(tls, "tls_context", FakeTlsContext)
+
+    def raise_it(*a, **k):
+        raise exc
+    monkeypatch.setattr(tls, "open_conn", raise_it)
+    with pytest.raises(type(exc)):
+        tls._accepts(Probe("127.0.0.1", 443, timeout=0.3), 5, 5)
+
+
+def test_legacy_protocols_collects_every_version_this_openssl_will_still_complete(monkeypatch):
+    monkeypatch.setattr(tls, "_accepts", lambda probe, low, high: True)
+    assert tls.legacy_protocols(Probe("127.0.0.1", 443, timeout=0.3)) == ["TLSv1", "TLSv1.1"]
+
+
+def test_legacy_protocols_skips_a_version_this_python_build_does_not_even_define(monkeypatch):
+    asked = []
+    monkeypatch.setattr(tls, "_accepts", lambda probe, low, high: asked.append(low) or True)
+
+    class PartialTLSVersion:
+        TLSv1_1 = ssl.TLSVersion.TLSv1_1                        # only the second _LEGACY entry is defined here
+    monkeypatch.setattr(ssl, "TLSVersion", PartialTLSVersion)
+    assert tls.legacy_protocols(Probe("127.0.0.1", 443, timeout=0.3)) == ["TLSv1.1"]
+    assert asked == [ssl.TLSVersion.TLSv1_1]                     # TLSv1 was skipped, never asked about
+
+
+def test_legacy_protocols_stops_asking_once_the_probe_budget_is_gone(monkeypatch):
+    from nemla.scanning.scheduler import ProbeBudget
+    monkeypatch.setattr(tls, "_accepts", lambda probe, low, high: pytest.fail("must not probe once the budget is gone"))
+    budget = ProbeBudget(1)
+    assert budget.take()                              # use up the one unit this probe is allowed
+    assert tls.legacy_protocols(Probe("127.0.0.1", 443, timeout=0.3, budget=budget)) == []
+
+
+class FakeSslSocket:
+    def __init__(self, version="TLSv1.3", cert_error=None):
+        self._version, self._cert_error = version, cert_error
+
+    def version(self):
+        return self._version
+
+    def cipher(self):
+        return ("TLS_AES_256_GCM_SHA384", "TLSv1.3", 256)
+
+    def getpeercert(self, binary_form=False):
+        if self._cert_error:
+            raise self._cert_error
+        return b""
+
+
+class FakeTlsConn:
+    def __init__(self, sock):
+        self.sock = sock
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def test_inspect_tls_returns_none_when_the_handshake_fails(monkeypatch):
+    def raise_it(**kw):
+        raise OSError("connection reset")
+    probe = Probe("127.0.0.1", 443, timeout=0.3)
+    monkeypatch.setattr(probe, "connect", raise_it)
+    assert tls.inspect_tls(probe) is None
+
+
+@pytest.mark.parametrize("exc", [Cancelled(), BudgetExhausted("probe budget exhausted")])
+def test_inspect_tls_lets_cancellation_and_budget_exhaustion_propagate(monkeypatch, exc):
+    def raise_it(**kw):
+        raise exc
+    probe = Probe("127.0.0.1", 443, timeout=0.3)
+    monkeypatch.setattr(probe, "connect", raise_it)
+    with pytest.raises(type(exc)):
+        tls.inspect_tls(probe)
+
+
+def test_inspect_tls_survives_a_certificate_it_cannot_read(monkeypatch):
+    sock = FakeSslSocket(cert_error=ssl.SSLError("no certificate available"))
+    probe = Probe("127.0.0.1", 443, timeout=0.3)
+    monkeypatch.setattr(probe, "connect", lambda **kw: FakeTlsConn(sock))
+    assert tls.inspect_tls(probe) == {"version": "TLSv1.3", "cipher": "TLS_AES_256_GCM_SHA384"}
+
+
+def test_inspect_tls_records_legacy_protocols_still_accepted(monkeypatch):
+    sock = FakeSslSocket(version="TLSv1.3")
+    probe = Probe("127.0.0.1", 443, timeout=0.3)
+    monkeypatch.setattr(probe, "connect", lambda **kw: FakeTlsConn(sock))
+    monkeypatch.setattr(tls, "legacy_protocols", lambda p: ["TLSv1", "TLSv1.1"])
+    assert tls.inspect_tls(probe, legacy=True)["legacy"] == ["TLSv1", "TLSv1.1"]
+
+
+# --------------------------------------------------------------------------
+# the core identification pipeline: _passive / _inside_tls / identify / detect_service
+# --------------------------------------------------------------------------
+
+def test_passive_survives_a_detector_that_crashes_on_the_banner(monkeypatch):
+    from nemla.fingerprint import REGISTRY, _passive
+    diagnostics = nemla.Diagnostics()
+
+    class Boom:
+        name = "boom"
+
+        def passive(self, probe):
+            raise RuntimeError("hostile banner crashed this detector")
+    monkeypatch.setattr("nemla.fingerprint.REGISTRY", [Boom(), *REGISTRY])
+    assert _passive(Probe("127.0.0.1", 1, banner=b"not empty"), 5, diagnostics) is None
+    assert diagnostics.as_list()[0]["code"] == "detector_error" and "boom" in diagnostics.as_list()[0]["message"]
+
+
+@pytest.mark.parametrize("exc", [Cancelled(), BudgetExhausted("probe budget exhausted")])
+def test_passive_lets_cancellation_and_budget_exhaustion_propagate(monkeypatch, exc):
+    from nemla.fingerprint import REGISTRY, _passive
+
+    class Boom:
+        name = "boom"
+
+        def passive(self, probe):
+            raise exc
+    monkeypatch.setattr("nemla.fingerprint.REGISTRY", [Boom(), *REGISTRY])
+    with pytest.raises(type(exc)):
+        _passive(Probe("127.0.0.1", 1, banner=b"not empty"), 5, nemla.Diagnostics())
+
+
+def test_inside_tls_synthesizes_a_generic_detection_when_nothing_inside_is_recognised(monkeypatch):
+    from nemla.fingerprint import _inside_tls
+    monkeypatch.setattr("nemla.fingerprint._passive", lambda *a, **k: None)
+    monkeypatch.setattr("nemla.fingerprint._active", lambda *a, **k: None)
+    probe = Probe("127.0.0.1", 8443, timeout=0.3)          # in HTTP_TLS_PORTS: never greets first, no connect made
+    found = _inside_tls(probe, {"version": "TLSv1.3"}, 5, None)
+    assert found.service == "tls" and found.label == "TLS" and "TLSv1.3" in found.evidence
+    assert found.tls is True and found.extra["tls"] == {"version": "TLSv1.3"}
+
+
+def test_inside_tls_relabels_a_service_whose_own_detector_did_not_already_mark_it_tls(monkeypatch):
+    """HTTP/SMTP/IMAP/POP3/FTP's own detectors already self-label under TLS (Detection(..., 'HTTPS' if probe.tls
+    else 'HTTP', ...)), so this fixup normally never fires for them - it exists for whatever does not."""
+    from nemla.fingerprint import _inside_tls
+    plain = Detection("http", "HTTP", "", "", 0.7, "protocol", "", "", "", False, {})
+    monkeypatch.setattr("nemla.fingerprint._passive", lambda *a, **k: plain)
+    found = _inside_tls(Probe("127.0.0.1", 8443, timeout=0.3), {"version": "TLSv1.3"}, 5, None)
+    assert found.label == "HTTPS"
+
+
+def test_inside_tls_appends_a_tls_note_to_a_label_the_relabel_table_does_not_know(monkeypatch):
+    from nemla.fingerprint import _inside_tls
+    other = Detection("redis", "Redis", "", "", 0.7, "protocol", "", "", "", False, {})
+    monkeypatch.setattr("nemla.fingerprint._passive", lambda *a, **k: other)
+    found = _inside_tls(Probe("127.0.0.1", 8443, timeout=0.3), {"version": "TLSv1.3"}, 5, None)
+    assert found.label == "Redis (TLS)"
+
+
+def test_inside_tls_treats_a_silent_or_refused_inner_banner_as_empty(closed_port):
+    from nemla.fingerprint import _inside_tls
+    found = _inside_tls(Probe("127.0.0.1", closed_port, timeout=0.3), {"version": "TLSv1.3"}, 5, None)
+    assert found.service == "tls"                          # nothing answered inside the tunnel either
+
+
+@pytest.mark.parametrize("exc", [Cancelled(), BudgetExhausted("probe budget exhausted")])
+def test_inside_tls_lets_cancellation_and_budget_exhaustion_propagate(monkeypatch, exc):
+    from nemla.fingerprint import _inside_tls
+
+    def raise_it(**kw):
+        raise exc
+    probe = Probe("127.0.0.1", 25, timeout=0.3)             # not in HTTP_TLS_PORTS: the inner banner read runs
+    monkeypatch.setattr(probe, "derive", lambda **kw: probe)
+    monkeypatch.setattr(probe, "connect", raise_it)
+    with pytest.raises(type(exc)):
+        _inside_tls(probe, {"version": "TLSv1.3"}, 5, None)
+
+
+def test_identify_does_nothing_at_intensity_zero():
+    assert nemla.identify(Probe("127.0.0.1", 1, banner=b"SSH-2.0-OpenSSH\r\n"), 0, None) is None
+
+
+def test_detect_service_reports_an_exhausted_budget_instead_of_crashing(monkeypatch):
+    diagnostics = nemla.Diagnostics()
+
+    def raise_it(*a, **k):
+        raise BudgetExhausted("probe budget exhausted")
+    monkeypatch.setattr("nemla.fingerprint.identify", raise_it)
+    assert nemla.detect_service("127.0.0.1", 1, b"", "", 0.3, None, None, 5, diagnostics) == {}
+    assert diagnostics.as_list()[0]["code"] == "budget"
 
 
 class warnings_ignored:
