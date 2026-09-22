@@ -4,6 +4,7 @@ import os
 import time
 import types
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -106,6 +107,72 @@ def test_a_failed_write_leaves_no_partial_file(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         history.save(tmp_path, nemla, META, [host()])
     assert list(history.folder(tmp_path).iterdir()) == []
+
+
+def test_save_tolerates_chmod_failing_on_the_folder_and_the_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(os, "chmod", lambda *a, **k: (_ for _ in ()).throw(OSError("chmod not supported here")))
+    scan_id = history.save(tmp_path, nemla, META, [host()])
+    assert history.load(tmp_path, scan_id)["hosts"][0]["ip"] == "10.0.0.5"
+
+
+def test_save_propagates_the_original_error_when_its_own_cleanup_also_fails(tmp_path, monkeypatch):
+    """Both os.replace and the cleanup's own os.unlink fail: the original error must still propagate, not a
+    secondary one from the failed cleanup."""
+    monkeypatch.setattr(os, "replace", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+    monkeypatch.setattr(os, "unlink", lambda *a, **k: (_ for _ in ()).throw(OSError("already gone")))
+    with pytest.raises(OSError, match="disk full"):
+        history.save(tmp_path, nemla, META, [host()])
+
+
+def test_saved_at_falls_back_to_zero_when_the_file_is_gone():
+    assert history._saved_at(Path("/nonexistent") / "gone.json", {}) == 0.0
+
+
+def test_prune_skips_files_it_cannot_stat_and_tolerates_unlink_failures(tmp_path, monkeypatch):
+    folder = tmp_path / "history"
+    folder.mkdir()
+    names = [f"20260101-00000{i}-t.json" for i in range(4)]
+    for name in names:
+        (folder / name).write_text("{}", encoding="utf-8")
+
+    real_stat, real_unlink = Path.stat, Path.unlink
+
+    def hostile_stat(self, *a, **k):
+        if self.name == names[0]:
+            raise OSError("vanished mid-scan")
+        return real_stat(self, *a, **k)
+
+    def hostile_unlink(self, *a, **k):
+        if self.name == names[1]:
+            raise OSError("permission denied")
+        return real_unlink(self, *a, **k)
+
+    monkeypatch.setattr(Path, "stat", hostile_stat)
+    monkeypatch.setattr(Path, "unlink", hostile_unlink)
+    history.prune(folder, keep=1)
+    remaining = {p.name for p in folder.glob("*.json")}
+    # names[0]: stat failed, never a delete candidate. names[1]: selected for deletion, but unlink failed.
+    # names[3]: newest, kept. names[2]: the only one actually removed.
+    assert remaining == {names[0], names[1], names[3]}
+
+
+@pytest.mark.skipif(os.name != "posix", reason="unprivileged symlinks need Windows developer mode")
+def test_load_refuses_a_saved_scan_file_that_is_a_symlink_leaving_the_folder(tmp_path):
+    outside = tmp_path / "outside.json"
+    outside.write_text(json.dumps({"target": "t", "hosts": []}), encoding="utf-8")
+    folder = history.folder(tmp_path)
+    folder.mkdir(parents=True)
+    scan_id = str(uuid.uuid4())
+    os.symlink(outside, folder / f"{scan_id}.json")
+    assert history.load(tmp_path, scan_id) is None
+
+
+def test_entries_ignores_files_whose_name_is_not_a_valid_scan_id(tmp_path):
+    folder = history.folder(tmp_path)
+    folder.mkdir(parents=True)
+    (folder / "not-a-valid-scan-id.json").write_text(json.dumps({"target": "t", "hosts": []}), encoding="utf-8")
+    real_id = history.save(tmp_path, nemla, META, [host()])
+    assert [s["id"] for s in history.list_scans(tmp_path)] == [real_id]
 
 
 def test_only_the_newest_scans_are_kept(tmp_path):
