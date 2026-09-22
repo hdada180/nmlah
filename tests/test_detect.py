@@ -190,6 +190,64 @@ def test_tls_probe_on_a_plain_port_returns_nothing(servers):
     assert nemla.tls_probe("127.0.0.1", port, timeout=0.5) == (None, {})
 
 
+def test_tls_probe_reads_the_greeting_on_implicit_tls_mail_ports(monkeypatch, servers, tmp_path):
+    """Port 465/993/995 (SMTPS/IMAPS/POP3S) speak in TLS from the first byte, and the mail server greets
+    first - unlike the http=True path, this only fires when the *port number itself* says "mail"."""
+    cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
+    cert.write_text(TEST_CERT)
+    key.write_text(TEST_KEY)
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(str(cert), str(key))
+
+    def tls_greeting(conn):
+        try:
+            with ctx.wrap_socket(conn, server_side=True) as s:
+                s.sendall(b"220 mail.example.com ESMTP ready\r\n")
+        except (OSError, ssl.SSLError):
+            pass
+
+    real_port = servers(tls_greeting)
+    real_probe = nemla.Probe
+    # tls_probe() must dial the literal port it was asked about (993) to decide whether to read a
+    # greeting, so the real test server has to sit behind a Probe whose connection target is faked
+    # to the free port it's actually listening on.
+    monkeypatch.setattr(nemla, "Probe", lambda ip, port, timeout: real_probe(ip, real_port, timeout))
+
+    info, extra = nemla.tls_probe("127.0.0.1", 993, timeout=1.0)
+    assert info is not None
+    assert extra["greeting"] == "220 mail.example.com ESMTP ready"
+
+
+def test_tls_probe_ignores_a_greeting_connection_that_fails(monkeypatch, servers, tmp_path):
+    """tls_probe() makes two connections: inspect_tls's own handshake (must succeed, or there is no info
+    to return at all) and a second one just for the greeting. If that second one fails outright - the port
+    refused the TLS handshake this time, a transient blip - the greeting is silently left out."""
+    cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
+    cert.write_text(TEST_CERT)
+    key.write_text(TEST_KEY)
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(str(cert), str(key))
+    seen = {"n": 0}
+
+    def handler(conn):
+        seen["n"] += 1
+        if seen["n"] == 1:
+            try:
+                with ctx.wrap_socket(conn, server_side=True):
+                    pass                     # a normal handshake for inspect_tls's own connection
+            except (OSError, ssl.SSLError):
+                pass
+        else:
+            conn.close()                     # refuses the handshake outright for the greeting connection
+
+    real_port = servers(handler)
+    real_probe = nemla.Probe
+    monkeypatch.setattr(nemla, "Probe", lambda ip, port, timeout: real_probe(ip, real_port, timeout))
+
+    info, extra = nemla.tls_probe("127.0.0.1", 995, timeout=1.0)
+    assert info is not None and "greeting" not in extra
+
+
 def test_redis_probe_reports_auth_state(servers):
     def redis_open(conn):
         data = conn.recv(1024)
