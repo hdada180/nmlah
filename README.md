@@ -284,7 +284,7 @@ IPv4 only.
 ## Testing and benchmarks
 
 ```bash
-python -m pytest                                   # the whole suite (about 1,200 tests, roughly three minutes)
+python -m pytest                                   # the whole suite (about 1,300 tests, roughly three minutes)
 python -m ruff check . && python -m mypy           # lint and types (CI checks Linux, Windows and macOS typing)
 python -m benchmarks.bench_scan                    # 100 / 1,000 / 10,000 / 65,535 ports against a loopback target
 python -m benchmarks.bench_network                 # 10 / 50 / 100 synthetic hosts, some broken on purpose
@@ -354,6 +354,8 @@ Found a security bug rather than a regular one? See [SECURITY.md](SECURITY.md) i
 ## Contributing
 
 Issues and pull requests are welcome. Please keep changes small, add a test, and keep the tool recon-only. When reporting a bug, include your OS, Python version, the command you ran and the error output (without private IPs or credentials).
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, style and test expectations, [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for how the project expects people to treat each other, and [CHANGELOG.md](CHANGELOG.md) for what changed between versions.
 
 ## License
 

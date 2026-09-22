@@ -351,6 +351,8 @@ python -m coverage run -m pytest -q && python -m coverage report -m    # איל�
 
 דיווחים על בעיות ובקשות מיזוג מתקבלים בברכה. שמרו על שינויים קטנים, הוסיפו בדיקה, והשאירו את הכלי לסיור בלבד. בדיווח על באג ציינו מערכת הפעלה, גרסת Python, הפקודה שהרצתם ופלט השגיאה (בלי כתובות IP פרטיות או פרטי התחברות).
 
+ראו [CONTRIBUTING.md](CONTRIBUTING.md) להגדרת סביבת הפיתוח, לסגנון ולדרישות הבדיקה, [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) לאופן שבו הפרויקט מצפה שאנשים יתייחסו זה לזה, ו-[CHANGELOG.md](CHANGELOG.md) למה שהשתנה בין הגרסאות.
+
 ## רישיון
 
 [MIT](LICENSE) © hdada180
