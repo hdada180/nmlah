@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 
@@ -361,3 +362,38 @@ def test_install_fails_cleanly_with_neither_a_console_script_nor_a_checkout(tmp_
     missing = tmp_path / "no-such-nemla.py"
     assert launcher.install(data, bin_dir, script=missing, which=no_installed_nemla) == 1
     assert not (data / "applications" / "nemla.desktop").exists()
+
+
+def test_install_fails_cleanly_when_the_icon_is_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(launcher, "ICON_SOURCE", tmp_path / "no-such-icon.svg")
+    data, bin_dir = tmp_path / "share", tmp_path / "bin"
+    assert launcher.install(data, bin_dir, python="python3", script=launcher.SCRIPT, which=no_installed_nemla) == 1
+    assert not (data / "applications").exists()
+
+
+def test_data_home_and_bin_home_use_xdg_or_fall_back_to_the_default(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    assert launcher.data_home() == tmp_path / "xdg"
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    assert launcher.data_home() == Path.home() / ".local" / "share"
+    assert launcher.bin_home() == Path.home() / ".local" / "bin"
+
+
+def test_refresh_caches_runs_the_tools_it_finds_and_tolerates_their_failure(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def fake_run(command, **kwargs):
+        calls.append(command[0])
+        if command[0] == "gtk-update-icon-cache":
+            raise OSError("no such tool, really")
+
+    monkeypatch.setattr(launcher.subprocess, "run", fake_run)
+    launcher._refresh_caches(tmp_path / "applications", tmp_path / "icons" / "hicolor")
+    assert calls == ["update-desktop-database", "gtk-update-icon-cache"]
+
+
+def test_uninstall_reports_when_there_is_nothing_to_remove(tmp_path, capsys):
+    data, bin_dir = tmp_path / "share", tmp_path / "bin"
+    assert launcher.uninstall(data, bin_dir) == 0
+    assert "Nothing to remove" in capsys.readouterr().out
