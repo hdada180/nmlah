@@ -331,12 +331,15 @@ RDP, SMB or Redis on any port, and you choose it: `--intensity 1` or `--no-banne
 ## Development
 
 ```bash
-pip install pytest pyflakes
+pip install ".[dev]"        # or: pip install pytest pyflakes ruff mypy coverage
 python -m pyflakes nemla nemla_ui nemla.py
 python -m pytest -q
+python -m coverage run -m pytest -q && python -m coverage report -m    # which lines the tests never touch
 ```
 
 The tests run entirely against loopback with throw-away servers (TCP, UDP, TLS, IPv6 when available): every protocol detector, the scheduler and cancellation, hostile input, reports in every format, history and diff, the local server's security and the Guard. See [docs/architecture.md](docs/architecture.md) for how to add a detector or a finding.
+
+Found a security bug rather than a regular one? See [SECURITY.md](SECURITY.md) instead of opening a public issue.
 
 ## Roadmap
 

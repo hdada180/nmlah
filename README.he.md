@@ -325,14 +325,17 @@ IPv6 השתמשו בטבלת השכנים של הראוטר או ב-`ip -6 neigh
 </div>
 
 ```bash
-pip install pytest pyflakes
+pip install ".[dev]"        # או: pip install pytest pyflakes ruff mypy coverage
 python -m pyflakes nemla nemla_ui nemla.py
 python -m pytest -q
+python -m coverage run -m pytest -q && python -m coverage report -m    # אילו שורות הבדיקות אף פעם לא נגעו בהן
 ```
 
 <div dir="rtl">
 
 הבדיקות רצות כולן על loopback מול שרתים זמניים (TCP, UDP, TLS, ו-IPv6 כשזמין): כל גלאי פרוטוקול, המתזמן והביטול, קלט עוין, דוחות בכל פורמט, היסטוריה והשוואה, אבטחת השרת המקומי והשמירה. ראו [docs/architecture.md](docs/architecture.md) איך מוסיפים גלאי או ממצא.
+
+מצאתם באג אבטחה, לא באג רגיל? ראו [SECURITY.md](SECURITY.md) במקום לפתוח issue ציבורי.
 
 ## מפת דרכים
 

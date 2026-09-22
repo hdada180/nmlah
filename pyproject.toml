@@ -24,7 +24,7 @@ dependencies = []
 
 [project.optional-dependencies]
 arp = ["scapy>=2.5"]
-dev = ["pytest", "pyflakes", "ruff", "mypy"]
+dev = ["pytest", "pyflakes", "ruff", "mypy", "coverage"]
 
 [project.scripts]
 nemla = "nemla.main:main"
@@ -85,3 +85,18 @@ strict_equality = true
 # Scapy is optional and ships no type information.
 module = ["scapy", "scapy.*"]
 ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["nemla", "nemla_ui"]
+# thin entry-point shims: nothing to cover beyond "does `python -m nemla` import cleanly", already checked elsewhere
+omit = ["nemla/__main__.py", "nemla/main.py"]
+
+[tool.coverage.report]
+# a line that cannot run in this environment (the opposite branch of `if sys.platform == "win32"`, an
+# import that fails because an optional dependency is absent, a defensive case that never fires in practice)
+# is not a real gap: mark it, and it stops counting toward the percentage.
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "except ImportError:",
+    "^\\s*\\.\\.\\.$",
+]

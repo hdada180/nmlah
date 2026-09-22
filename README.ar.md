@@ -326,14 +326,17 @@ nemla --uninstall-launcher
 </div>
 
 ```bash
-pip install pytest pyflakes
+pip install ".[dev]"        # أو: pip install pytest pyflakes ruff mypy coverage
 python -m pyflakes nemla nemla_ui nemla.py
 python -m pytest -q
+python -m coverage run -m pytest -q && python -m coverage report -m    # أي أسطر ما لمستها الاختبارات
 ```
 
 <div dir="rtl">
 
 الاختبارات بتشتغل كلها على loopback مع خوادم مؤقتة (TCP وUDP وTLS وIPv6 إذا متوفر): كل كاشف بروتوكول، والمجدوِل والإلغاء، والمدخلات العدائية، والتقارير بكل صيغة، والسجل والمقارنة، وأمان السيرفر المحلي، والحراسة. شوف [docs/architecture.md](docs/architecture.md) لكيفية إضافة كاشف أو ملاحظة.
+
+لقيت ثغرة أمنية، مش خطأ عادي؟ شوف [SECURITY.md](SECURITY.md) بدل ما تفتح issue عام.
 
 ## خارطة الطريق
 
