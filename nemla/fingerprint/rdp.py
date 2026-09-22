@@ -25,15 +25,6 @@ def connection_request(protocols: int) -> bytes:
     return struct.pack("!BBH", 3, 0, 4 + len(x224)) + x224
 
 
-def _tpkt_complete(data: bytes) -> bool:
-    """True once a whole TPKT packet arrived (or the data cannot be one)."""
-    if not data:
-        return False
-    if data[0] != 3:
-        return True
-    return len(data) >= 4 and len(data) >= struct.unpack("!H", data[2:4])[0]
-
-
 def parse_confirm(data: bytes):
     """('ok', selected_protocol) | ('fail', code) | ('legacy', 0) | None if it is not an RDP reply."""
     if len(data) < 11 or data[0] != 3 or data[5] != 0xD0:

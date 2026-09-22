@@ -9,7 +9,8 @@ import pytest
 
 import nemla
 from nemla.fingerprint import databases, dns, rdp, smb, ssh
-from nemla.fingerprint.base import Probe
+from nemla.fingerprint.base import BudgetExhausted, Probe
+from nemla.net import Cancelled
 
 from test_detect import TEST_CERT, TEST_KEY
 
@@ -353,6 +354,43 @@ def test_rdp_parser_and_request_shape():
     assert rdp.parse_confirm(b"") is None and rdp.parse_confirm(b"GET / HTTP/1.0") is None
     assert rdp.parse_confirm(rdp_response("ok", 2)) == ("ok", 2)
     assert rdp.parse_confirm(rdp_response("fail", 5)) == ("fail", 5)
+
+
+def test_rdp_parser_recognises_a_pre_negotiation_server():
+    """A server old enough to have no RFC 5073 negotiation at all: a bare X.224 connect confirm, nothing after it."""
+    bare = bytes([3, 0, 0, 11, 6, 0xD0, 0, 0, 0, 0, 0])
+    assert len(bare) == 11 and rdp.parse_confirm(bare) == ("legacy", 0)
+
+
+def test_ask_returns_none_on_a_refused_connection(closed_port):
+    probe = Probe("127.0.0.1", closed_port, timeout=0.3)
+    assert rdp.Rdp()._ask(probe, 0) is None
+
+
+@pytest.mark.parametrize("exc", [Cancelled(), BudgetExhausted("probe budget exhausted")])
+def test_ask_lets_cancellation_and_budget_exhaustion_propagate(monkeypatch, exc):
+    def raise_it(*a, **k):
+        raise exc
+    probe = Probe("127.0.0.1", 3389, timeout=0.3)
+    monkeypatch.setattr(probe, "connect", raise_it)
+    with pytest.raises(type(exc)):
+        rdp.Rdp()._ask(probe, 0)
+
+
+def test_rdp_nla_requirement_revealed_only_by_the_second_probe(tcp_server):
+    """The legacy request is refused for an ordinary reason (not code 5), so a second, TLS-only request is sent;
+    that one is what actually demands NLA."""
+    def policy(requested):
+        return rdp_response("fail", 2) if requested == 0 else rdp_response("fail", 5)
+    res = detect(tcp_server(rdp_server(policy)))
+    assert res["details"]["nla"] == "required"
+
+
+def test_rdp_reports_unknown_when_neither_probe_settles_it(tcp_server):
+    def policy(requested):
+        return rdp_response("fail", 2)          # refused both times, never for the NLA-specific reason
+    res = detect(tcp_server(rdp_server(policy)))
+    assert res["details"]["nla"] == "unknown"
 
 
 # --------------------------------------------------------------------------
