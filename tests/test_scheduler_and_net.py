@@ -1,6 +1,8 @@
 """The bounded scheduler, cancellation, hostile responses and monotonic clocks."""
+import errno
 import importlib
 import socket
+import ssl
 import threading
 import time
 from pathlib import Path
@@ -191,6 +193,174 @@ def test_engine_scan_can_be_cancelled_mid_flight(tcp_server):
     assert not thread.is_alive() and time.monotonic() - started < 3.0
     hosts, meta = result["out"]
     assert meta["cancelled"] is True and hosts == []            # a half-scanned host proves nothing
+
+
+# --------------------------------------------------------------------------
+# net.py: addresses, waiting and the Conn wrapper
+# --------------------------------------------------------------------------
+
+def test_ip_version():
+    assert net.ip_version("10.0.0.1") == 4
+    assert net.ip_version("::1") == 6
+    assert net.ip_version("not-an-ip") == 0
+
+
+def test_wait_io_reports_cancellation_even_when_it_surfaces_as_a_closed_socket():
+    """If cancellation closes the socket out from under a blocking select(), the ValueError/OSError that
+    follows must still be reported as Cancelled, not a generic 'socket closed' error - a race that a plain
+    threading.Event can't reproduce deterministically, so this fakes is_set() turning true mid-call instead."""
+    class FlipCancel:
+        def __init__(self):
+            self.calls = 0
+
+        def is_set(self):
+            self.calls += 1
+            return self.calls > 1      # not set yet when wait_io enters the loop, set by the time select() fails
+
+    sock = socket.socket()
+    sock.close()
+    with pytest.raises(net.Cancelled):
+        net.wait_io(sock, True, False, time.monotonic() + 5, FlipCancel())
+
+
+def test_wait_io_reports_a_closed_socket_as_a_bad_file_descriptor():
+    sock = socket.socket()
+    sock.close()
+    with pytest.raises(OSError):
+        net.wait_io(sock, True, False, time.monotonic() + 5)
+
+
+def test_tcp_connect_returns_immediately_when_connect_completes_synchronously(monkeypatch, tcp_server):
+    port = tcp_server(lambda conn: conn.close())
+    monkeypatch.setattr(socket.socket, "connect_ex", lambda self, addr: 0)
+    net.tcp_connect("127.0.0.1", port, 1.0).close()
+
+
+def test_tcp_connect_raises_immediately_on_a_synchronous_refusal(monkeypatch):
+    monkeypatch.setattr(socket.socket, "connect_ex", lambda self, addr: errno.ECONNREFUSED)
+    with pytest.raises(ConnectionRefusedError):
+        net.tcp_connect("127.0.0.1", 1, 1.0)
+
+
+def test_tcp_state_propagates_cancellation(monkeypatch):
+    def raises_cancelled(*a, **k):
+        raise net.Cancelled()
+    monkeypatch.setattr(net, "tcp_connect", raises_cancelled)
+    with pytest.raises(net.Cancelled):
+        net.tcp_state("127.0.0.1", 1, 0.2)
+
+
+def test_tls_context_tolerates_an_openssl_build_that_refuses_the_legacy_settings(monkeypatch):
+    monkeypatch.setattr(ssl.SSLContext, "set_ciphers",
+                        lambda self, ciphers: (_ for _ in ()).throw(ssl.SSLError("no such cipher spec")))
+    ctx = net.tls_context()
+    assert isinstance(ctx, ssl.SSLContext)
+
+
+def test_conn_is_tls_reflects_the_underlying_socket_type():
+    plain = socket.socket()
+    try:
+        assert net.Conn(plain).is_tls is False
+    finally:
+        plain.close()
+
+
+def test_conn_close_tolerates_a_socket_that_is_already_gone():
+    class HostileSocket:
+        def close(self):
+            raise OSError("already closed")
+    net.Conn(HostileSocket()).close()      # must not raise
+
+
+class _WantsRetry:
+    """A stand-in socket that raises once, then succeeds - for the SSL 'wants more I/O' retry branches."""
+    def __init__(self, raise_once, reply=b"reply"):
+        self._raise_once = raise_once
+        self._reply = reply
+        self.calls = 0
+
+    def send(self, data):
+        self.calls += 1
+        if self.calls == 1:
+            raise self._raise_once
+        return len(data)
+
+    def recv(self, limit):
+        self.calls += 1
+        if self.calls == 1:
+            raise self._raise_once
+        return self._reply
+
+
+@pytest.mark.parametrize("exc", [BlockingIOError(), ssl.SSLWantWriteError()])
+def test_conn_send_retries_after_the_socket_says_it_would_block(monkeypatch, exc):
+    monkeypatch.setattr(net, "wait_io", lambda *a, **k: None)
+    sock = _WantsRetry(exc)
+    net.Conn(sock).send(b"hi")
+    assert sock.calls == 2
+
+
+def test_conn_send_retries_after_ssl_wants_to_read_first(monkeypatch):
+    monkeypatch.setattr(net, "wait_io", lambda *a, **k: None)
+    sock = _WantsRetry(ssl.SSLWantReadError())
+    net.Conn(sock).send(b"hi")
+    assert sock.calls == 2
+
+
+def test_conn_recv_retries_after_ssl_wants_to_write_first(monkeypatch):
+    monkeypatch.setattr(net, "wait_io", lambda *a, **k: None)
+    sock = _WantsRetry(ssl.SSLWantWriteError())
+    assert net.Conn(sock).recv() == b"reply"
+    assert sock.calls == 2
+
+
+@pytest.mark.parametrize("exc", [ssl.SSLZeroReturnError(), ssl.SSLEOFError()])
+def test_conn_recv_returns_empty_when_tls_closes(exc):
+    class ClosesTls:
+        def recv(self, limit):
+            raise exc
+    assert net.Conn(ClosesTls()).recv() == b""
+
+
+def test_start_tls_retries_the_handshake_after_want_write(monkeypatch):
+    monkeypatch.setattr(net, "wait_io", lambda *a, **k: None)
+
+    class FakeSSock:
+        def __init__(self):
+            self.calls = 0
+
+        def do_handshake(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise ssl.SSLWantWriteError()
+
+    fake_ssock = FakeSSock()
+
+    class FakeCtx:
+        def wrap_socket(self, sock, server_hostname=None, do_handshake_on_connect=False):
+            return fake_ssock
+
+    raw = socket.socket()
+    try:
+        conn = net.Conn(raw)
+        conn.start_tls(ctx=FakeCtx())
+        assert fake_ssock.calls == 2 and conn.sock is fake_ssock
+    finally:
+        raw.close()
+
+
+def test_udp_exchange_returns_unknown_when_the_socket_cannot_be_created(monkeypatch):
+    monkeypatch.setattr(net.socket, "socket",
+                        lambda *a, **k: (_ for _ in ()).throw(OSError("no more sockets")))
+    assert net.udp_exchange("127.0.0.1", 12345, b"x", 0.2) == ("unknown", b"")
+
+
+def test_udp_exchange_propagates_cancellation(udp_server):
+    port = udp_server(lambda data, addr, sock: None)          # never replies
+    cancel = threading.Event()
+    cancel.set()
+    with pytest.raises(net.Cancelled):
+        net.udp_exchange("127.0.0.1", port, b"probe", 1.0, cancel=cancel)
 
 
 # --------------------------------------------------------------------------
