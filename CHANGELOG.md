@@ -1,8 +1,8 @@
 # Changelog
 
 All notable changes to Nemla are documented here, newest first. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project does not yet publish tagged releases, so
-entries below `[2.0.0]` are reconstructed from the git history rather than pinned to a release date.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). `v2.0.0` is the first tagged release; entries before it
+are reconstructed from the git history rather than pinned to a release date.
 
 ## [Unreleased]
 
@@ -78,4 +78,4 @@ entries below `[2.0.0]` are reconstructed from the git history rather than pinne
 - The 3D web interface and a Linux `.desktop` launcher.
 
 [Unreleased]: https://github.com/hdada180/nmlah/compare/main...feature/v2-security-platform
-[2.0.0]: https://github.com/hdada180/nmlah/commit/e340eb29ed44c11594f3e7482c2be9c5109aa66b
+[2.0.0]: https://github.com/hdada180/nmlah/releases/tag/v2.0.0

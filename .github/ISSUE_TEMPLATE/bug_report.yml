@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in Nemla itself is broken (a crash, wrong output, a detector that misfires).
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Found a security vulnerability instead?** Please use "Security vulnerability"
+        from the template picker, not this form - see [SECURITY.md](../../SECURITY.md).
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected instead, if that is not obvious.
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: The exact command you ran
+      placeholder: "nemla 192.168.1.10 -p 1-1000 --udp"
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Error output or relevant log lines
+      description: Run with `-v` for more detail. Redact anything private first (see the checklist below).
+      render: text
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and version
+      placeholder: "Ubuntu 24.04 / Windows 11 / macOS 14"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "python3 --version"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Nemla version
+      placeholder: "nemla --version, or the commit/branch if running from a checkout"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: redacted
+    attributes:
+      label: Before submitting
+      options:
+        - label: I removed private IP addresses, hostnames, credentials and any other sensitive data from the command and output above.
+          required: true
+        - label: I searched existing issues and this has not already been reported.
+          required: true
