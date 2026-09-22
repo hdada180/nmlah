@@ -376,7 +376,8 @@ def test_wrapper_script_does_not_run_anything_hidden_in_a_path(tmp_path, script)
     launcher.ICON_SOURCE = icon
     real = tmp_path / "real script.py"
     real.write_text("print('ok')")
-    launcher.install(data=tmp_path / "data", bin_dir=tmp_path / "bin", python="/bin/echo", script=real)
+    launcher.install(data=tmp_path / "data", bin_dir=tmp_path / "bin", python="/bin/echo", script=real,
+                     which=lambda name: None)
     wrapper = (tmp_path / "bin" / "nemla").read_text()
     quoted = launcher._shell_quote(script)
     probe = subprocess.run(["sh", "-c", f"cd {tmp_path}; printf '%s' {quoted}"], capture_output=True, encoding="utf-8")

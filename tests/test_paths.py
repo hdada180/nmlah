@@ -172,7 +172,8 @@ def test_the_launcher_installs_into_folders_with_spaces_and_unicode(tmp_path):
     script = tmp_path / "some dir" / "nemla.py"
     script.parent.mkdir()
     script.write_text("# launcher", encoding="utf-8")
-    assert launcher.install(data=data, bin_dir=bin_dir, python=sys.executable, script=str(script)) == 0
+    assert launcher.install(data=data, bin_dir=bin_dir, python=sys.executable, script=str(script),
+                            which=lambda name: None) == 0
     desktop = next(data.rglob("nemla.desktop"))
     text = desktop.read_text(encoding="utf-8")
     assert ("Exec=" in text and str(script).replace("\\", "\\\\") in text.replace("\\\\\\\\", "\\\\")) or "some dir" in text

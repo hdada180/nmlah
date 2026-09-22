@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,12 +8,11 @@ version = "2.0.0"
 description = "Lightweight network reconnaissance, service intelligence and defensive monitoring: IPv4/IPv6 discovery, TCP and UDP scanning, service and OS fingerprinting, TLS analysis, evidence-based findings, reports, history and a 3D web interface (English, Arabic, Hebrew)."
 readme = "README.md"
 requires-python = ">=3.8"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "hdada180" }]
 keywords = ["network", "port-scanner", "reconnaissance", "fingerprinting", "security", "monitoring", "ipv6", "udp", "sarif", "arabic", "hebrew"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Topic :: System :: Networking",
     "Topic :: Security",

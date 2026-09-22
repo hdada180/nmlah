@@ -4,7 +4,12 @@
 
   ~/.local/share/applications/nemla.desktop   the menu entry
   ~/.local/share/icons/hicolor/scalable/apps/nemla.svg   its icon
-  ~/.local/bin/nemla                          a `nemla` command (only if none exists yet)
+  ~/.local/bin/nemla                          a `nemla` command, only when `pip install` did not already
+                                               give you one and only if none exists yet
+
+The menu entry runs whichever of these actually works: the `nemla` command already on PATH (a normal `pip
+install`, including `pip install -e .`), or `python3 nemla.py` next to a plain git checkout. A checkout with
+no console script and no `nemla.py` next to it (found by neither) is the only case `install()` refuses.
 """
 from __future__ import annotations
 
@@ -76,13 +81,18 @@ def _refresh_caches(applications: Path, icons_root: Path) -> None:
                 pass
 
 
-def install(data=None, bin_dir=None, python=None, script=None) -> int:
+def install(data=None, bin_dir=None, python=None, script=None, which=shutil.which) -> int:
     data = Path(data) if data else data_home()
     bin_dir = Path(bin_dir) if bin_dir else bin_home()
     python = python or sys.executable or "python3"
     script = Path(script) if script else SCRIPT
-    if not script.is_file():
-        print(f"Cannot find nemla.py at {script}")
+    installed = which("nemla")     # a pip install (including `pip install -e .`) already gives you this command
+    if installed:
+        command = [installed]
+    elif script.is_file():
+        command = [python, str(script)]
+    else:
+        print(f"Cannot find an installed `nemla` command, and no nemla.py at {script}")
         return 1
     if not ICON_SOURCE.is_file():
         print(f"Cannot find the icon at {ICON_SOURCE}")
@@ -95,12 +105,13 @@ def install(data=None, bin_dir=None, python=None, script=None) -> int:
         folder.mkdir(parents=True, exist_ok=True)
 
     (applications / DESKTOP_NAME).write_text(
-        desktop_entry([python, str(script), "--ui"]), encoding="utf-8")
+        desktop_entry([*command, "--ui"]), encoding="utf-8")
     shutil.copyfile(ICON_SOURCE, icon_dir / "nemla.svg")
 
     wrapper = bin_dir / "nemla"
     wrote_wrapper = False
-    if not wrapper.exists() or WRAPPER_MARK in wrapper.read_text(encoding="utf-8", errors="ignore"):
+    # `nemla` already works from anywhere once pip has installed it: nothing to add under ~/.local/bin
+    if not installed and (not wrapper.exists() or WRAPPER_MARK in wrapper.read_text(encoding="utf-8", errors="ignore")):
         wrapper.write_text(
             f'#!/bin/sh\n{WRAPPER_MARK}\nexec {_shell_quote(python)} {_shell_quote(str(script))} "$@"\n',
             encoding="utf-8")

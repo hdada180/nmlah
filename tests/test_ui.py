@@ -313,10 +313,14 @@ def test_desktop_entry_quotes_paths_with_spaces():
     assert launcher._quote('a"b$c%') == '"a\\"b\\$c%%"'
 
 
+def no_installed_nemla(name):
+    return None                    # a plain git checkout: no `pip install` has put a `nemla` command on PATH
+
+
 def test_install_and_uninstall_launcher(tmp_path):
     data, bin_dir = tmp_path / "share", tmp_path / "bin"
     script = launcher.SCRIPT
-    assert launcher.install(data, bin_dir, python="/usr/bin/python3", script=script) == 0
+    assert launcher.install(data, bin_dir, python="/usr/bin/python3", script=script, which=no_installed_nemla) == 0
 
     entry = (data / "applications" / "nemla.desktop").read_text(encoding="utf-8")
     assert "--ui" in entry and launcher._quote(str(script)) in entry
@@ -333,7 +337,27 @@ def test_install_keeps_a_foreign_nemla_command(tmp_path):
     data, bin_dir = tmp_path / "share", tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "nemla").write_text("#!/bin/sh\necho pip-installed\n")
-    assert launcher.install(data, bin_dir, python="python3", script=launcher.SCRIPT) == 0
+    assert launcher.install(data, bin_dir, python="python3", script=launcher.SCRIPT, which=no_installed_nemla) == 0
     assert "pip-installed" in (bin_dir / "nemla").read_text()
     launcher.uninstall(data, bin_dir)
     assert (bin_dir / "nemla").exists()
+
+
+def test_install_prefers_an_already_installed_console_script(tmp_path):
+    """A `pip install` (including `pip install -e .`) gives you a working `nemla` command: use it, and do not
+    also write a ~/.local/bin/nemla wrapper - there is nothing for it to add. Found by actually installing the
+    built wheel into a fresh venv and running --install-launcher against it: it looked for a nemla.py that a
+    real pip install never creates, and failed."""
+    data, bin_dir = tmp_path / "share", tmp_path / "bin"
+    assert launcher.install(data, bin_dir, python="python3", script=tmp_path / "no-such-nemla.py",
+                            which=lambda name: "/usr/local/bin/nemla" if name == "nemla" else None) == 0
+    entry = (data / "applications" / "nemla.desktop").read_text(encoding="utf-8")
+    assert "Exec=/usr/local/bin/nemla --ui" in entry
+    assert not (bin_dir / "nemla").exists()                    # nothing to add: pip already gave you the command
+
+
+def test_install_fails_cleanly_with_neither_a_console_script_nor_a_checkout(tmp_path):
+    data, bin_dir = tmp_path / "share", tmp_path / "bin"
+    missing = tmp_path / "no-such-nemla.py"
+    assert launcher.install(data, bin_dir, script=missing, which=no_installed_nemla) == 1
+    assert not (data / "applications" / "nemla.desktop").exists()
