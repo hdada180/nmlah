@@ -1,4 +1,5 @@
 """The scan pipeline as a whole, the command line as a program, and the compatibility surface."""
+import re
 import subprocess
 import sys
 import threading
@@ -182,9 +183,45 @@ def test_exit_codes_for_findings_and_failures(tcp_server, tmp_path):
     assert nemla.main(["-t", "127.0.0.1", "-p", "99999", "-o", str(tmp_path / "x.html")]) == 1
 
 
-def test_installing_and_running_as_a_module_uses_the_console_entry_point():
+def test_the_console_script_and_the_packages_are_declared_in_pyproject():
     pyproject = (REPO / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'nemla = "nemla.main:main"' in pyproject and "nemla_ui" in pyproject and 'version = "2.0.0"' in pyproject
+    assert 'nemla = "nemla.main:main"' in pyproject
+    # sub-packages are found automatically, so a new one can never be forgotten in the wheel
+    assert "[tool.setuptools.packages.find]" in pyproject and '"nemla.*"' in pyproject and '"nemla_ui.*"' in pyproject
+    # `nemla/` is a package: a top-level module of the same name next to it must never be installed beside it
+    assert "py-modules" not in pyproject
+
+
+def test_the_version_is_written_in_exactly_one_place():
+    pyproject = (REPO / "pyproject.toml").read_text(encoding="utf-8")
+    project_table = pyproject.split("[project.optional-dependencies]")[0]
+    assert 'dynamic = ["version"]' in project_table and not re.search(r"^version\s*=", project_table, re.M)
+    assert 'attr = "nemla.config.__version__"' in pyproject
+    sources = [*REPO.glob("nemla/**/*.py"), *REPO.glob("nemla_ui/**/*.py"), REPO / "nemla.py"]
+    assigning = [p.relative_to(REPO).as_posix() for p in sources if re.search(r"^__version__\s*=", p.read_text(encoding="utf-8"), re.M)]
+    assert assigning == ["nemla/config.py"]
+
+
+def test_every_module_imports_in_a_fresh_interpreter():
+    """A circular import, or a module that only works because another was imported first, shows only when it is the
+    first import of a new process. The same check runs against the installed wheel in CI (.github/scripts/)."""
+    import os
+    import pkgutil
+    from concurrent.futures import ThreadPoolExecutor
+
+    import nemla_ui
+    names = [package.__name__ for package in (nemla, nemla_ui)]
+    for package in (nemla, nemla_ui):
+        names += [info.name for info in pkgutil.walk_packages(package.__path__, package.__name__ + ".")]
+    env = dict(os.environ, PYTHONPATH=str(REPO))
+
+    def attempt(name):
+        result = subprocess.run([sys.executable, "-c", f"import {name}"], capture_output=True, encoding="utf-8",
+                                errors="replace", cwd=REPO.parent, env=env, timeout=60)
+        return name, result.returncode, result.stderr.strip().splitlines()[-1:]
+    with ThreadPoolExecutor(8) as pool:
+        broken = [(name, err) for name, code, err in pool.map(attempt, names) if code != 0]
+    assert not broken and len(names) > 40, broken
 
 
 # --------------------------------------------------------------------------

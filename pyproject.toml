@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemla"
-version = "2.0.0"
+dynamic = ["version"]
 description = "Lightweight network reconnaissance, service intelligence and defensive monitoring: IPv4/IPv6 discovery, TCP and UDP scanning, service and OS fingerprinting, TLS analysis, evidence-based findings, reports, history and a 3D web interface (English, Arabic, Hebrew)."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -13,6 +13,13 @@ authors = [{ name = "hdada180" }]
 keywords = ["network", "port-scanner", "reconnaissance", "fingerprinting", "security", "monitoring", "ipv6", "udp", "sarif", "arabic", "hebrew"]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "Topic :: System :: Networking",
     "Topic :: Security",
@@ -33,8 +40,13 @@ Homepage = "https://github.com/hdada180/nmlah"
 Issues = "https://github.com/hdada180/nmlah/issues"
 Changelog = "https://github.com/hdada180/nmlah/blob/main/CHANGELOG.md"
 
-[tool.setuptools]
-packages = ["nemla", "nemla.discovery", "nemla.scanning", "nemla.fingerprint", "nemla.reports", "nemla_ui"]
+[tool.setuptools.dynamic]
+# the one place the version is written: nemla/config.py (read from the source text, without importing the package)
+version = { attr = "nemla.config.__version__" }
+
+[tool.setuptools.packages.find]
+# every package (and sub-package) under these two names is included automatically; nothing else is
+include = ["nemla", "nemla.*", "nemla_ui", "nemla_ui.*"]
 
 [tool.setuptools.package-data]
 nemla_ui = ["web/*.*", "web/brand/*"]

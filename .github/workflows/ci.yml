@@ -25,7 +25,7 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip "ruff~=0.16.8" pyflakes
       - run: python -m ruff check .
-      - run: python -m pyflakes nemla nemla_ui nemla.py tests benchmarks
+      - run: python -m pyflakes nemla nemla_ui nemla.py tests benchmarks .github/scripts
 
   typecheck:
     name: typecheck (mypy)
@@ -199,3 +199,67 @@ jobs:
         with:
           name: benchmarks
           path: benchmarks/results/
+
+  # ------------------------------------------------------------------ what a user actually installs
+  # The tests above import the source tree. These two jobs check the thing that ships: the wheel and the sdist are
+  # built, compared with the source tree (nothing missing, nothing extra, one version), and the wheel alone is
+  # installed into a clean virtual environment and run from outside the checkout.
+  package:
+    name: package (build, check the contents)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip build twine
+      - name: Every file compiles
+        run: python -m compileall -q nemla nemla_ui nemla.py tests benchmarks .github/scripts
+      - run: python -m build
+      - run: python -m twine check --strict dist/*
+      - name: The wheel and the sdist match the source tree
+        run: python .github/scripts/check_dist.py dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  installed:
+    name: installed wheel (${{ matrix.os }}, python ${{ matrix.python }})
+    needs: package
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04]
+        python: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: windows-latest
+            python: "3.8"
+          - os: windows-latest
+            python: "3.13"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          allow-prereleases: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Install the wheel, and nothing else, into a new virtual environment
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          if [ -x "$RUNNER_TEMP/venv/Scripts/python.exe" ]; then PY="$RUNNER_TEMP/venv/Scripts/python.exe"; else PY="$RUNNER_TEMP/venv/bin/python"; fi
+          echo "VENV_PYTHON=$PY" >> "$GITHUB_ENV"
+          "$PY" -m pip install --upgrade pip
+          "$PY" -m pip install dist/*.whl
+          "$PY" -m pip list
+      - name: Smoke test, from outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: '"$VENV_PYTHON" "$GITHUB_WORKSPACE/.github/scripts/smoke_installed.py"'

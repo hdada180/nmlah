@@ -1,0 +1,8 @@
+# What goes into the source distribution besides the packages themselves (the wheel is defined by pyproject.toml).
+# An sdist should be enough to read the docs, run the test suite and use the source-checkout launcher.
+include LICENSE README.md README.ar.md README.he.md CHANGELOG.md CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md
+include requirements.txt nemla.py
+graft docs
+graft tests
+global-exclude __pycache__ *.py[cod] *.so .DS_Store
+prune tests/__pycache__
