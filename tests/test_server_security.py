@@ -4,6 +4,7 @@ import json
 import socket
 import threading
 import time
+import types
 import uuid
 from http.server import ThreadingHTTPServer
 from urllib.parse import quote
@@ -13,6 +14,7 @@ import pytest
 import nemla
 from nemla import history
 from nemla_ui import server
+from conftest import wait_until
 
 
 @pytest.fixture()
@@ -542,3 +544,282 @@ def test_serve_runs_until_ctrl_c_and_cleans_up(monkeypatch, tmp_path):
     code = server.serve(nemla, port=0, open_window=False, keep_alive=True)
     assert code == 0
     assert any("Nemla 3D interface: http://127.0.0.1:" in line for line in logged)
+
+# --------------------------------------------------------------------------
+# request handling edges
+# --------------------------------------------------------------------------
+
+def test_head_requests_get_the_headers_of_a_page(ui):
+    _app, port = ui
+    status, res, data = call(port, "/", "HEAD")
+    assert status == 200 and data == b"" and res.getheader("Content-Security-Policy")
+
+
+def test_a_path_with_a_null_byte_is_a_clean_404(ui):
+    _app, port = ui
+    assert call(port, "/%00")[0] == 404
+
+
+def test_a_path_the_file_system_cannot_resolve_is_a_clean_404(ui, monkeypatch):
+    class Unresolvable:
+        def __truediv__(self, other):
+            return self
+
+        def resolve(self):
+            raise OSError("cannot resolve this path")
+
+    monkeypatch.setattr(server, "WEB_DIR", Unresolvable())
+    _app, port = ui
+    assert call(port, "/anything.html")[0] == 404
+
+
+def test_the_window_saying_goodbye_is_remembered(ui):
+    app, port = ui
+    assert call(port, "/api/bye", "POST", token=app.token, body={})[0] == 200 and app.bye_at is not None
+
+
+def test_a_client_that_vanishes_mid_request_gets_no_answer_and_costs_nothing(ui, monkeypatch):
+    app, port = ui
+
+    def gone():
+        raise ConnectionResetError("the browser went away")
+    monkeypatch.setattr(app, "info", gone)
+    with pytest.raises((http.client.RemoteDisconnected, ConnectionError)):
+        call(port, "/api/info", token=app.token)
+
+
+def test_a_request_error_with_its_own_status_is_answered_with_that_status(ui, monkeypatch):
+    app, port = ui
+
+    def refuses():
+        raise server.ScanRequestError("no coffee here", 418)
+    monkeypatch.setattr(app, "info", refuses)
+    status, _, data = call(port, "/api/info", token=app.token)
+    assert status == 418 and json.loads(data) == {"error": "no coffee here"}
+
+
+def test_a_crash_that_cannot_even_be_reported_is_swallowed(ui, monkeypatch):
+    """The handler fails, then the 500 it tries to send fails too (the client is gone): nothing may escape."""
+    app, port = ui
+
+    def crashes():
+        raise RuntimeError("boom")
+    monkeypatch.setattr(app, "info", crashes)
+    real_dumps = json.dumps
+
+    def dumps(obj, *args, **kwargs):
+        if obj == {"error": "internal error"}:
+            raise OSError("the client vanished")
+        return real_dumps(obj, *args, **kwargs)
+    monkeypatch.setattr(server.json, "dumps", dumps)
+    with pytest.raises((http.client.RemoteDisconnected, ConnectionError)):
+        call(port, "/api/info", token=app.token)
+
+
+def test_too_many_open_streams_are_refused_with_429(ui):
+    app, port = ui
+    app.job = server.Job("j1", "10.0.0.5", "en")
+    app.sse_clients = server.MAX_STREAMS
+    assert call(port, "/api/events?job=j1", token=app.token)[0] == 429
+
+
+class _QuickCondition:
+    """A Job.cond whose wait returns at once, so the keep-alive branch of the event stream is reached without
+    the real ten second wait."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def wait(self, timeout=None):
+        time.sleep(0.02)
+
+    def notify_all(self):
+        pass
+
+
+def test_a_quiet_event_stream_sends_keep_alive_pings_and_frees_its_slot_when_the_client_leaves(ui):
+    app, port = ui
+    job = server.Job("j2", "10.0.0.5", "en")
+    job.cond = _QuickCondition()
+    app.job = job
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
+        client.sendall(f"GET /api/events?job=j2 HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+                       f"X-Nemla-Token: {app.token}\r\n\r\n".encode())
+        data = b""
+        while b": ping" not in data:
+            chunk = client.recv(4096)
+            assert chunk
+            data += chunk
+    assert wait_until(lambda: app.sse_clients == 0, timeout=8)     # the write to the vanished client failed, quietly
+
+
+def test_a_body_the_client_stops_sending_is_not_waited_for(ui):
+    """The 413 is answered first; if the client then closes its side without sending the rest, the discard ends."""
+    app, port = ui
+    with socket.create_connection(("127.0.0.1", port), timeout=10) as client:
+        client.sendall(f"POST /api/scan HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nX-Nemla-Token: {app.token}\r\n"
+                       f"Content-Type: application/json\r\nContent-Length: 500000\r\n\r\n".encode() + b"x" * 1000)
+        assert client.recv(4096).startswith((b"HTTP/1.0 413", b"HTTP/1.1 413"))
+        client.shutdown(socket.SHUT_WR)
+        started = time.monotonic()
+        while client.recv(4096):
+            pass
+        assert time.monotonic() - started < 1.5                     # closed on the end of the stream, not the 2 s limit
+
+
+# --------------------------------------------------------------------------
+# the application object: scan lifecycle and guard control
+# --------------------------------------------------------------------------
+
+def test_a_boolean_is_not_a_number():
+    with pytest.raises(ValueError):
+        server._number({"threads": True}, "threads", 150, 1, 500, int)
+
+
+@pytest.mark.parametrize("profile, count", [("standard", 1024), ("deep", 10000), ("quick", len(nemla.TOP_PORTS)),
+                                            ("something-else", len(nemla.TOP_PORTS))])
+def test_every_scan_profile_picks_its_ports(tmp_path, profile, count):
+    app = server.App(nemla, data_dir=tmp_path)
+    ports = app.parse_scan({"target": "127.0.0.1", "profile": profile, "authorized": True})[3]
+    assert len(ports) == count
+
+
+def test_two_scans_started_at_the_same_moment_cannot_both_run(tmp_path, monkeypatch):
+    app = server.App(nemla, data_dir=tmp_path)
+    answers = iter([False, True])                       # nothing running at the first look, a scan by the second
+    monkeypatch.setattr(app, "running", lambda: next(answers))
+    with pytest.raises(server.ScanRequestError) as caught:
+        app.start_scan(GOOD)
+    assert caught.value.status == 409 and app.job is None
+
+
+def test_a_scan_that_crashes_reports_an_error_event_and_ends(tmp_path, monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(nemla, "run_scan", boom)
+    app = server.App(nemla, data_dir=tmp_path)
+    job = app.start_scan(GOOD)
+    assert wait_until(lambda: job.closed, timeout=10)
+    assert job.events[-1] == {"type": "error", "msg": "RuntimeError: boom"}
+
+
+def test_remembering_a_scan_that_never_produced_results_does_nothing(tmp_path):
+    app = server.App(nemla, data_dir=tmp_path)
+    done = {}
+    app._remember(server.Job("x", "10.0.0.5", "en"), done)
+    assert done == {}
+
+
+def test_a_history_that_cannot_be_saved_is_reported_but_never_loses_the_scan(tmp_path, monkeypatch):
+    def full_disk(*args, **kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr(server.history_mod, "save", full_disk)
+    app = server.App(nemla, data_dir=tmp_path)
+    job = server.Job("x", "10.0.0.5", "en")
+    job.meta, job.hosts = {"cancelled": False, "discovered": 1}, []
+    done = {"type": "done"}
+    app._remember(job, done)
+    assert done["history_error"] == "disk full" and "scan_id" not in done
+
+
+def test_starting_the_guard_while_it_runs_returns_the_running_one(tmp_path):
+    app = server.App(nemla, data_dir=tmp_path)
+    app.guard = types.SimpleNamespace(running=True, status=lambda: {"running": True, "decoys": [2222]})
+    assert app.start_guard({}) == {"running": True, "decoys": [2222]}
+
+
+def test_a_guard_interval_that_is_not_a_number_is_refused(tmp_path):
+    app = server.App(nemla, data_dir=tmp_path)
+    with pytest.raises(server.ScanRequestError):
+        app.start_guard({"interval": "nan"})
+
+
+def test_stopping_a_guard_that_was_never_started_says_it_is_not_running(tmp_path):
+    assert server.App(nemla, data_dir=tmp_path).stop_guard() == {"running": False}
+
+
+def test_a_report_of_an_unfinished_scan_is_a_conflict(tmp_path):
+    app = server.App(nemla, data_dir=tmp_path)
+    with pytest.raises(server.ScanRequestError) as caught:
+        app.report(server.Job("x", "10.0.0.5", "en"), "html", "en")
+    assert caught.value.status == 409
+
+
+# --------------------------------------------------------------------------
+# watching the window, and serve() around it
+# --------------------------------------------------------------------------
+
+class _Ticks:
+    """app.finished stand-in: wait() says "not finished" a fixed number of times, then "finished"."""
+
+    def __init__(self, ticks):
+        self.ticks = ticks
+
+    def wait(self, seconds):
+        self.ticks -= 1
+        return self.ticks < 0
+
+
+def test_the_watcher_quits_and_stops_the_scan_when_the_window_shows_no_sign_of_life(tmp_path):
+    app = server.App(nemla, data_dir=tmp_path)
+    app.finished = _Ticks(5)
+    app.last_seen = time.monotonic() - server.IDLE_LIMIT - 1
+    app.job = types.SimpleNamespace(cancel=threading.Event())
+    stopped = []
+    server._watch(app, types.SimpleNamespace(shutdown=lambda: stopped.append(True)))
+    assert stopped == [True] and app.job.cancel.is_set()
+
+
+def test_the_watcher_quits_once_the_window_said_goodbye_and_the_grace_period_passed(tmp_path):
+    app = server.App(nemla, data_dir=tmp_path)
+    app.finished = _Ticks(5)
+    app.bye_at = time.monotonic() - server.IDLE_GRACE - 1
+    stopped = []
+    server._watch(app, types.SimpleNamespace(shutdown=lambda: stopped.append(True)))
+    assert stopped == [True]
+
+
+def test_the_watcher_never_quits_while_an_event_stream_is_open(tmp_path):
+    app = server.App(nemla, data_dir=tmp_path)
+    app.finished = _Ticks(3)
+    app.sse_clients = 1
+    app.last_seen = time.monotonic() - server.IDLE_LIMIT - 1
+    stopped = []
+    server._watch(app, types.SimpleNamespace(shutdown=lambda: stopped.append(True)))
+    assert stopped == []
+
+
+def test_serve_as_root_on_linux_asks_the_user_to_open_the_address_themselves(monkeypatch):
+    monkeypatch.setattr(server.BoundedServer, "serve_forever", lambda self, poll_interval=0.25: (_ for _ in ()).throw(KeyboardInterrupt))
+    monkeypatch.setattr(server.sys, "platform", "linux")
+    monkeypatch.setattr(server, "is_root", lambda: True)
+    opened, logged = [], []
+    monkeypatch.setattr(server, "open_ui_window", lambda url: opened.append(url) or True)
+    monkeypatch.setattr(nemla, "log", logged.append)
+    assert server.serve(nemla, port=0, open_window=True) == 0
+    assert opened == [] and any("Running as root" in line for line in logged)
+
+
+def test_serve_watches_the_window_it_opened_and_cleans_up_a_running_scan_and_guard(monkeypatch, tmp_path):
+    job = types.SimpleNamespace(cancel=threading.Event())
+    stops = []
+    guard = types.SimpleNamespace(stop=lambda: stops.append(True))
+
+    class Preloaded(server.App):
+        def __init__(self, engine, lang=None):
+            super().__init__(engine, lang, data_dir=tmp_path)
+            self.job, self.guard = job, guard
+
+    watched = []
+    monkeypatch.setattr(server, "App", Preloaded)
+    monkeypatch.setattr(server, "open_ui_window", lambda url: True)
+    monkeypatch.setattr(server, "_watch", lambda app, httpd: watched.append(app.auto_exit))
+    monkeypatch.setattr(server.BoundedServer, "serve_forever", lambda self, poll_interval=0.25: (_ for _ in ()).throw(KeyboardInterrupt))
+    logged = []
+    monkeypatch.setattr(nemla, "log", logged.append)
+    assert server.serve(nemla, port=0, open_window=True, keep_alive=False) == 0
+    assert wait_until(lambda: watched == [True]) and any("Close the Nemla window" in line for line in logged)
+    assert job.cancel.is_set() and stops == [True]
