@@ -1050,3 +1050,40 @@ def test_smtp_without_starttls_and_without_plain_auth_is_a_low_finding():
             "heuristic": False, "details": {"starttls": False}}
     found = {f["id"]: f for f in nemla.assess_host({"ip": "10.0.0.5", "open_ports": [port]})}
     assert found["smtp_no_starttls"]["severity"] == "low"
+
+# --------------------------------------------------------------------------
+# the detector registry refuses what would be ambiguous or unusable
+# --------------------------------------------------------------------------
+
+def _detector(**attributes):
+    from nemla.fingerprint.base import Detector
+    return type("Candidate", (Detector,), {"name": "candidate", "label": "Candidate", "ports": (7777,), "rarity": 4,
+                                           **attributes})
+
+
+@pytest.mark.parametrize("attributes, message", [
+    ({"name": "http"}, "already registered"),
+    ({"name": ""}, "no name"),
+    ({"name": "   "}, "no name"),
+    ({"label": ""}, "no label"),
+    ({"ports": (0,)}, "not port numbers"),
+    ({"ports": (70000,)}, "not port numbers"),
+    ({"ports": ("80",)}, "not port numbers"),
+    ({"ports": (True,)}, "not port numbers"),
+    ({"rarity": 0}, "rarity"),
+    ({"rarity": 10}, "rarity"),
+    ({"rarity": "4"}, "rarity"),
+])
+def test_a_detector_that_would_be_ambiguous_or_unusable_is_refused_when_it_is_registered(attributes, message):
+    from nemla.fingerprint.base import REGISTRY, register
+    before = list(REGISTRY)
+    with pytest.raises(ValueError, match=message):
+        register(_detector(**attributes))
+    assert REGISTRY == before                       # nothing half-registered
+
+
+def test_the_registry_holds_unique_names_and_valid_attributes():
+    from nemla.fingerprint import REGISTRY
+    names = [d.name for d in REGISTRY]
+    assert len(names) == len(set(names)) == 15
+    assert all(d.label and all(0 < p < 65536 for p in d.ports) and 1 <= d.rarity <= 9 for d in REGISTRY)

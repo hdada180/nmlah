@@ -118,6 +118,23 @@ REGISTRY: list = []
 
 
 def register(cls):
-    """Class decorator: add a detector to the registry (in import order)."""
-    REGISTRY.append(cls())
+    """Class decorator: add a detector to the registry (in import order).
+
+    A detector that would be ambiguous or unusable is refused when its module is imported, not discovered in the middle
+    of a scan: `name` is the key stored in every port record, so it must be unique; `label` is what the reports show;
+    `ports` must be real port numbers and `rarity` must be between 1 and 9.
+    """
+    detector = cls()
+    name = getattr(detector, "name", "")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError(f"detector {cls.__name__} has no name")
+    if any(existing.name == name for existing in REGISTRY):
+        raise ValueError(f"a detector named {name!r} is already registered (each name is the key of its port records)")
+    if not isinstance(getattr(detector, "label", ""), str) or not detector.label.strip():
+        raise ValueError(f"detector {name!r} has no label")
+    if not all(isinstance(p, int) and not isinstance(p, bool) and 0 < p < 65536 for p in detector.ports):
+        raise ValueError(f"detector {name!r} lists ports that are not port numbers: {detector.ports!r}")
+    if not isinstance(detector.rarity, int) or isinstance(detector.rarity, bool) or not 1 <= detector.rarity <= 9:
+        raise ValueError(f"detector {name!r} has a rarity outside 1..9: {detector.rarity!r}")
+    REGISTRY.append(detector)
     return cls
