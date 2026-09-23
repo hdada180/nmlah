@@ -105,7 +105,8 @@ def test_ssh_protocol_1_is_a_high_finding(tcp_server):
 
 
 @pytest.mark.parametrize("payload", [b"", b"\x00" * 30, bytes([20]) + b"\x00" * 16 + struct.pack("!I", 10 ** 9),
-                                     bytes([21]) + b"\x00" * 50])
+                                     bytes([21]) + b"\x00" * 50,
+                                     bytes([20]) + b"\x00" * 16 + name_list(["only-one-list"])])   # 9 lists missing
 def test_ssh_kexinit_parser_rejects_garbage(payload):
     with pytest.raises(ValueError):
         ssh.parse_kexinit(payload)
@@ -115,6 +116,28 @@ def test_ssh_survives_a_truncated_or_hostile_kexinit(tcp_server):
     for packet in (b"\xff" * 64, struct.pack("!IB", 5, 200) + b"x" * 4, kexinit(["a"], ["b"], ["c"], ["d"])[:20]):
         res = scan(tcp_server(ssh_server(b"SSH-2.0-OpenSSH_9.6", packet)))
         assert res["product"] == "OpenSSH" and "weak_algorithms" not in res.get("details", {})
+
+
+def test_ssh_keeps_the_banner_detection_when_a_well_framed_packet_is_not_a_kexinit(tcp_server):
+    """Length, padding and body all check out, but message type 21 (NEWKEYS) is not the KEXINIT we asked for."""
+    res = scan(tcp_server(ssh_server(b"SSH-2.0-OpenSSH_9.6", ssh_packet(bytes([21]) + b"\x00" * 30))))
+    assert res["product"] == "OpenSSH" and "host_keys" not in res.get("details", {})
+
+
+def test_ssh_refine_keeps_the_passive_detection_when_the_second_connection_fails(closed_port):
+    detection = Detection("ssh", "SSH", "OpenSSH", "9.6", 0.9, "banner", "SSH-2.0-OpenSSH_9.6", "", "", False, {})
+    result = ssh.Ssh().refine(Probe("127.0.0.1", closed_port, timeout=0.3), detection)
+    assert result is detection and result.extra == {}
+
+
+@pytest.mark.parametrize("exc", [Cancelled(), BudgetExhausted("probe budget exhausted")])
+def test_ssh_refine_lets_cancellation_and_budget_exhaustion_propagate(monkeypatch, exc):
+    def raise_it(**kw):
+        raise exc
+    probe = Probe("127.0.0.1", 22, timeout=0.3)
+    monkeypatch.setattr(probe, "connect", raise_it)
+    with pytest.raises(type(exc)):
+        ssh.Ssh().refine(probe, Detection("ssh", "SSH", "", "", 0.5, "banner", "", "", "", False, {}))
 
 
 # --------------------------------------------------------------------------
