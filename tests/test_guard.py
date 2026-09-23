@@ -524,3 +524,34 @@ def test_guard_command_prints_alerts_and_stops_on_ctrl_c(monkeypatch, capsys, tm
     assert "203.0.113.9 connected to decoy port(s) 2222" in out and "[High]" in out
     assert "sudo iptables -I INPUT -s 203.0.113.9 -j DROP" in out
     assert "Could not open decoy port 2323" in out and "Guard stopped." in out
+
+def test_guard_command_shows_the_evidence_and_never_suggests_blocking_a_protected_address(monkeypatch, capsys, tmp_path):
+    class FakeGuard:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            return {"decoys": [], "failed": {}}
+
+        def block(self, ip):
+            raise guard.ProtectedAddress(ip)          # the gateway or this computer: never a suggestion
+
+        def stop(self):
+            pass
+
+    calls = []
+
+    def fake_wait(self, after, timeout):
+        calls.append(after)
+        if len(calls) == 1:
+            return [{"id": 1, "kind": "arp_change", "severity": "medium", "src_ip": "192.168.1.1",
+                     "mac": "aa:bb:cc:00:00:02", "confidence": 0.55,
+                     "detail": {"gateway": True, "old_mac": "aa:bb:cc:00:00:01", "new_mac": "aa:bb:cc:00:00:02"},
+                     "evidence": ["192.168.1.1 was bound to one address and is now bound to another"]}]
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(guard, "Guard", FakeGuard)
+    monkeypatch.setattr(guard.AlertLog, "wait", fake_wait)
+    assert nemla.main(["--guard", "--guard-log", str(tmp_path / "a.jsonl")]) == 0
+    out = capsys.readouterr().out
+    assert "was bound to one address" in out and "iptables" not in out

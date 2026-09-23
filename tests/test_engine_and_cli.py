@@ -246,3 +246,85 @@ def test_a_rate_that_is_negative_or_absurd_is_refused(value, message):
     from nemla import config
     with pytest.raises(config.OptionError, match=message):
         config.non_negative_float(value, "rate")
+
+# --------------------------------------------------------------------------
+# engine and command-line edges
+# --------------------------------------------------------------------------
+
+def test_discovery_progress_reaches_the_event_stream(tcp_server):
+    port = tcp_server(lambda conn: conn.close())
+    events = []
+    nemla.run_scan("127.0.0.1", ["127.0.0.1"], [port], no_os=True, no_banner=True, timeout=0.5, emit=events.append)
+    assert {"type": "progress", "phase": "discovery", "done": 1, "total": 1} in events
+
+
+def test_a_scan_that_finds_no_host_returns_an_empty_result(monkeypatch):
+    from nemla import engine
+    monkeypatch.setattr(engine, "discover_hosts", lambda *args, **kwargs: {})
+    hosts, meta = nemla.run_scan("192.0.2.1", ["192.0.2.1"], [80], no_os=True, timeout=0.3)
+    assert hosts == [] and meta["discovered"] == 0
+
+
+def test_ctrl_c_during_the_port_scan_ends_it_as_cancelled(monkeypatch):
+    from nemla import engine
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt
+    monkeypatch.setattr(engine, "_scan_hosts", interrupted)
+    hosts, meta = nemla.run_scan("127.0.0.1", ["127.0.0.1"], [80], no_ping=True, no_os=True, timeout=0.3)
+    assert hosts == [] and meta["cancelled"] is True
+
+
+def test_fancy_output_is_off_when_the_stream_cannot_say_whether_it_is_a_terminal(monkeypatch):
+    import sys
+
+    class Closed:
+        encoding = "utf-8"
+
+        def isatty(self):
+            raise ValueError("I/O operation on closed file")
+    monkeypatch.setattr(sys, "stdout", Closed())
+    assert nemla.fancy_output_ok() is False
+
+
+@pytest.mark.parametrize("no_color, coloured", [(False, True), (True, False)])
+def test_the_fancy_banner_is_coloured_unless_no_color_is_set(monkeypatch, capsys, no_color, coloured):
+    monkeypatch.setattr(nemla.cli, "fancy_output_ok", lambda: True)
+    if no_color:
+        monkeypatch.setenv("NO_COLOR", "1")
+    else:
+        monkeypatch.delenv("NO_COLOR", raising=False)
+    nemla.print_banner()
+    assert ("\x1b[" in capsys.readouterr().out) is coloured
+
+
+def test_an_alert_of_an_unknown_kind_is_shown_as_its_kind():
+    assert nemla.alert_text({"kind": "brand-new-kind"}) == "brand-new-kind"
+
+
+def test_utf8_output_setup_survives_a_stream_that_refuses_to_reconfigure(monkeypatch):
+    import sys
+
+    class Stubborn:
+        def reconfigure(self, **kwargs):
+            raise ValueError("I/O operation on closed file")
+    monkeypatch.setattr(sys, "stdout", Stubborn())
+    monkeypatch.setattr(sys, "stderr", Stubborn())
+    nemla.cli.use_utf8_output()
+
+
+def test_the_launcher_flags_run_the_launcher_and_the_verbose_flag_turns_on_debug_output(monkeypatch):
+    from nemla_ui import launcher
+    debug = []
+    monkeypatch.setattr(nemla.cli, "enable_debug", lambda: debug.append(True))
+    monkeypatch.setattr(launcher, "install", lambda: 7)
+    monkeypatch.setattr(launcher, "uninstall", lambda: 8)
+    assert nemla.main(["--install-launcher"]) == 7 and debug == []
+    assert nemla.main(["--uninstall-launcher", "--verbose"]) == 8 and debug == [True]
+
+
+def test_the_launcher_flags_explain_a_missing_interface_folder(monkeypatch, capsys):
+    import sys
+    monkeypatch.setitem(sys.modules, "nemla_ui", None)          # `from nemla_ui import launcher` now fails
+    assert nemla.main(["--install-launcher"]) == 1
+    assert "nemla_ui" in capsys.readouterr().out

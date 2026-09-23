@@ -362,3 +362,15 @@ def test_watch_reports_what_changed_between_rounds(lab_port, tmp_path, monkeypat
     entry = json.loads(log_file.read_text(encoding="utf-8").splitlines()[0])
     assert entry["summary"]["new_hosts"] == 1 and entry["summary"]["opened_ports"] == 1
     assert len(history.list_scans(tmp_path)) == 2  # both rounds were saved for the next run
+
+def test_watch_refuses_a_target_it_cannot_parse(capsys):
+    assert nemla.main(["-t", "10.0.0.1-999", "--watch", "10m"]) == 1
+
+
+def test_watch_stops_when_a_round_is_interrupted_part_way(monkeypatch, tmp_path):
+    from nemla_ui import guard
+
+    monkeypatch.setattr(guard, "data_dir", lambda: tmp_path)
+    monkeypatch.setattr(nemla.cli, "run_scan", lambda *args, **kwargs: ([], {"discovered": 2, "cancelled": True}))
+    assert nemla.main(["-t", "127.0.0.1", "-p", "80", "--watch", "10s"]) == 0
+    assert history.list_scans(tmp_path) == []             # a partial scan proves nothing, so nothing was saved

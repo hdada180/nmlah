@@ -268,3 +268,84 @@ def test_no_os_skips_the_guess(tcp_server):
     port = tcp_server(lambda c: c.close())
     hosts, _ = nemla.run_scan("127.0.0.1", ["127.0.0.1"], [port], no_ping=True, no_os=True, timeout=1.0)
     assert hosts[0]["ttl"] is None and hosts[0]["os_guess"] == "Skipped" and hosts[0]["os"]["family"] == "unknown"
+
+@pytest.mark.parametrize("ttl, phrase", [(250, "routers, switches, Solaris"), (30, "very old Windows or embedded")])
+def test_unusual_initial_ttls_are_recorded_as_weak_evidence(ttl, phrase):
+    assert any(phrase in line for line in osd.guess_os_detailed(ttl, []).evidence)
+
+
+@pytest.mark.parametrize("port, phrase", [(5985, "WinRM"), (445, "SMB is open"), (548, "Apple-specific port"),
+                                          (62078, "Apple-specific port")])
+def test_a_single_open_port_can_hint_at_a_platform(port, phrase):
+    assert any(phrase in line for line in osd.guess_os_detailed(None, [open_port(port)]).evidence)
+
+
+def test_a_netbios_answer_counts_for_windows_but_only_a_little():
+    guess = osd.guess_os_detailed(None, [open_port(137, "NetBIOS", detected="netbios-ns")])
+    assert any("answers NetBIOS name queries" in line for line in guess.evidence) and guess.confidence <= 0.2
+
+
+def test_a_docker_bridge_network_card_points_at_a_container():
+    guess = osd.guess_os_detailed(None, [], vendor="Docker bridge network")
+    assert guess.family == "linux" and any("Docker bridge MAC address" in line for line in guess.evidence)
+
+# --------------------------------------------------------------------------
+# certificates with exactly one unusual piece, for shapes a real server can send but openssl rarely writes
+# --------------------------------------------------------------------------
+
+def assemble(key="1.3.101.112", subject=None, between=b"", extensions=b""):
+    """A minimal v3 certificate around the pieces a test wants to vary."""
+    validity = der(0x30, der(0x17, b"260101000000Z") + der(0x17, b"360101000000Z"))
+    signature = der(0x30, oid("1.3.101.112"))
+    public_key = der(0x30, der(0x30, oid(key)) + der(0x03, b"\x00" + b"\x01" * 32))
+    tbs = der(0x30, der(0xA0, der(0x02, b"\x02")) + der(0x02, b"\x01") + signature + name("issuer") + validity
+              + (subject or name("subject")) + public_key + between + extensions)
+    return der(0x30, tbs + signature + der(0x03, b"\x00" + b"\x00" * 8))
+
+
+def wide_name(common_name, tag, encoding):
+    return der(0x30, der(0x31, der(0x30, oid("2.5.4.3") + der(tag, common_name.encode(encoding)))))
+
+
+def san_extension(names, critical=False):
+    general_names = der(0x30, b"".join(der(0x82, n.encode()) for n in names))
+    flag = der(0x01, b"\xff") if critical else b""
+    return der(0xA3, der(0x30, der(0x30, oid("2.5.29.17") + flag + der(0x04, general_names))))
+
+
+def test_an_empty_object_identifier_is_refused():
+    from nemla.fingerprint import x509
+    with pytest.raises(X509Error, match="empty OID"):
+        x509._oid(b"", 0, 0)
+
+
+@pytest.mark.parametrize("tag, encoding", [(0x1E, "utf-16-be"), (0x1C, "utf-32-be")])
+def test_names_in_wide_string_types_are_decoded(tag, encoding):
+    facts = parse_certificate(assemble(subject=wide_name("Zo\u00eb", tag, encoding)))
+    assert facts["subject"]["commonName"] == "Zo\u00eb"
+
+
+@pytest.mark.parametrize("algorithm, key_type, bits", [("1.3.101.112", "Ed25519", 256), ("1.3.101.113", "Ed448", 448),
+                                                        ("1.2.840.10040.4.1", "DSA", 0)])
+def test_the_less_common_public_key_types_are_named(algorithm, key_type, bits):
+    facts = parse_certificate(assemble(key=algorithm))
+    assert (facts["key_type"], facts["key_bits"]) == (key_type, bits)
+
+
+def test_a_flood_of_alternative_names_is_capped():
+    from nemla.fingerprint import x509
+    names = [f"host{i}.example.test" for i in range(x509.MAX_SAN + 25)]
+    facts = parse_certificate(assemble(extensions=san_extension(names)))
+    assert facts["san"] == names[:x509.MAX_SAN]
+
+
+def test_a_critical_alternative_name_extension_is_still_read():
+    facts = parse_certificate(assemble(extensions=san_extension(["a.example.test"], critical=True)))
+    assert facts["san"] == ["a.example.test"]
+
+
+def test_unique_identifier_fields_before_the_extensions_are_skipped():
+    """A v2/v3 certificate may carry issuerUniqueID [1] and subjectUniqueID [2] ahead of the [3] extensions."""
+    between = der(0x81, b"\x00\x01") + der(0x82, b"\x00\x02")
+    facts = parse_certificate(assemble(between=between, extensions=san_extension(["b.example.test"])))
+    assert facts["san"] == ["b.example.test"]

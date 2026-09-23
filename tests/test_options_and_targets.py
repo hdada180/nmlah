@@ -200,3 +200,39 @@ def test_sockaddr_for_both_families():
         net.sockaddr("fe80::1%no-such-interface-xyz", 80)
     assert net.af_of("::1") != net.af_of("127.0.0.1")
     assert ipaddress.ip_address(net.split_zone("fe80::1%eth0")[0]).version == 6
+
+def test_all_local_asks_the_predicate_about_every_address():
+    targets = nemla.iter_targets("10.0.0.1-3")
+    assert targets.all_local(lambda ip: ip.startswith("10.")) is True
+    assert targets.all_local(lambda ip: ip != "10.0.0.2") is False
+
+
+def test_a_name_that_resolves_to_nothing_is_refused(monkeypatch):
+    from nemla import targets
+    monkeypatch.setattr(targets.socket, "getaddrinfo", lambda *args, **kwargs: [])
+    with pytest.raises(ValueError):
+        targets.resolve("empty.example")
+
+
+def test_a_range_whose_end_is_not_an_address_is_refused():
+    with pytest.raises(ValueError):
+        nemla.parse_targets("10.0.0.1-999")
+
+
+def test_a_name_that_resolves_to_a_scoped_address_keeps_its_zone(monkeypatch):
+    from nemla import targets
+    monkeypatch.setattr(targets, "resolve", lambda *args, **kwargs: ["fe80::1%eth0"])
+    assert nemla.parse_targets("printer") == ["fe80::1%eth0"]
+
+
+def test_a_target_expression_that_yields_nothing_is_refused_even_if_every_item_parsed(monkeypatch):
+    from nemla import targets
+    monkeypatch.setattr(targets, "_spans_for", lambda item, family, all_addresses: ([], []))
+    with pytest.raises(ValueError):
+        nemla.parse_targets("10.0.0.1")
+
+
+@pytest.mark.parametrize("spec", [None, 22, ["22"], "1," * 10001])
+def test_a_port_spec_that_is_not_text_or_is_absurdly_long_is_refused(spec):
+    with pytest.raises(ValueError):
+        nemla.parse_ports(spec)
