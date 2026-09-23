@@ -113,6 +113,35 @@ def test_oversized_bodies_are_refused_before_they_are_read(ui):
     assert app.job is None
 
 
+def test_the_413_for_an_oversized_body_always_reaches_the_client(ui):
+    """The body is refused without being kept, but the client is still sending it when the answer goes out. Closing
+    the socket with that data unread makes the OS reset the connection, and a reset can destroy the 413 before
+    the client reads it - it was lost about one time in eight on Windows (found by a flaky run of the test above,
+    measured at 4/30 failures). Repeating the request makes the old behaviour fail with near certainty."""
+    app, port = ui
+    for _ in range(40):
+        status, res, _ = call(port, "/api/scan", "POST", token=app.token, raw="x" * (server.MAX_BODY + 10),
+                              headers={"Content-Type": "application/json"})
+        assert status == 413 and res.getheader("Connection") == "close"
+    assert app.job is None
+
+
+def test_an_oversized_body_that_never_arrives_does_not_hold_the_connection_for_long(ui):
+    """Only the headers are sent, claiming a body of a gigabyte: the 413 comes back at once, and the connection is
+    closed within a couple of seconds instead of waiting for data that is never coming."""
+    app, port = ui
+    with socket.create_connection(("127.0.0.1", port), timeout=10) as sock:
+        sock.sendall(b"POST /api/scan HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nX-Nemla-Token: %s\r\n"
+                     b"Content-Type: application/json\r\nContent-Length: 1000000000\r\n\r\n"
+                     % (port, app.token.encode()))
+        started = time.monotonic()
+        first = sock.recv(4096)
+        assert first.startswith((b"HTTP/1.0 413", b"HTTP/1.1 413"))
+        while sock.recv(4096):
+            pass
+        assert time.monotonic() - started < 6
+
+
 @pytest.mark.parametrize("raw", ["", "not json", "[1,2,3]", '"string"', "null", "{\"target\": ", "\x00\x01"])
 def test_garbage_bodies_are_a_clean_error(ui, raw):
     app, port = ui

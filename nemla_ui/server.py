@@ -47,6 +47,8 @@ MAX_EVENTS = 60000       # events kept per scan; progress and log lines are drop
 MAX_STREAMS = 16         # simultaneous event streams
 MAX_CONNECTIONS = 64     # simultaneous connections
 REQUEST_TIMEOUT = 30     # seconds a connection may stall
+DISCARD_LIMIT = 1 << 20  # most of a refused (too large) body that is read and thrown away before closing
+DISCARD_TIMEOUT = 2.0    # seconds allowed for that
 IDLE_GRACE = 6           # seconds after the window says goodbye before we exit
 IDLE_LIMIT = 150         # seconds without any sign of life before we exit
 ESSENTIAL_EVENTS = {"start", "phase", "host", "host_start", "host_done", "port", "done", "error"}
@@ -405,6 +407,22 @@ def make_handler(app: App):
                 return {}
             return data if isinstance(data, dict) else {}
 
+        def _refuse_oversized(self, err) -> None:
+            """Answer 413 without keeping the body, then let the client finish sending it (thrown away, capped and
+            time-limited) before closing. Closing with data still arriving makes the OS reset the connection, and a
+            reset can destroy the 413 before the client has read it - it was lost about one time in eight on Windows."""
+            try:
+                self._send(413, json.dumps({"error": str(err)}).encode("utf-8"), headers={"Connection": "close"})
+                self.connection.settimeout(DISCARD_TIMEOUT)
+                left = min(int(self.headers.get("Content-Length") or 0), DISCARD_LIMIT)
+                while left > 0:
+                    chunk = self.rfile.read(min(left, 65536))
+                    if not chunk:
+                        break
+                    left -= len(chunk)
+            except (OSError, ValueError):
+                pass
+
         def _host_ok(self) -> bool:
             return (self.headers.get("Host") or "").lower() in app.allowed_hosts
 
@@ -439,6 +457,8 @@ def make_handler(app: App):
             except (BrokenPipeError, ConnectionError, socket.timeout):
                 return  # the browser went away
             except ScanRequestError as err:
+                if err.status == 413:
+                    return self._refuse_oversized(err)
                 self._json(err.status, {"error": str(err)})
             except Exception:
                 logger.debug("request failed", exc_info=True)
