@@ -986,3 +986,67 @@ def test_the_example_in_docs_architecture_md_really_works(tcp_server):
         assert nemla.detect_service("127.0.0.1", port, b"", "", 1.0)["detected"] == "myproto"
     finally:
         REGISTRY[:] = [d for d in REGISTRY if d.name != "myproto"]
+
+# --------------------------------------------------------------------------
+# small parser and finding edges
+# --------------------------------------------------------------------------
+
+def test_dns_name_that_never_ends_is_refused():
+    with pytest.raises(ValueError, match="name too long"):
+        dns._skip_name(b"\x01a" * 70, 0)
+
+
+def test_dns_response_skips_records_that_are_not_txt_to_reach_the_version():
+    header = struct.pack("!HHHHHH", 1, 0x8180, 0, 2, 0, 0)
+    a_record = b"\x00" + struct.pack("!HHIH", 1, 1, 0, 4) + b"\x7f\x00\x00\x01"
+    txt_record = b"\x00" + struct.pack("!HHIH", 16, 1, 0, 8) + b"\x07" + b"9.18.24"
+    assert dns.parse_response(header + a_record + txt_record)["version"] == "9.18.24"
+
+
+def test_dns_product_is_unknown_for_an_answer_it_does_not_recognise():
+    assert dns.dns_product("something entirely different") == (None, None)
+
+
+def test_a_reply_that_is_not_http_yields_no_web_facts_and_no_detection():
+    from nemla.fingerprint import http as webfp
+    assert webfp.parse_http(b"SSH-2.0-OpenSSH_9.6\r\n") == {}
+    assert webfp.Http().build(Probe("127.0.0.1", 80), {}) is None
+
+
+def test_admin_consoles_are_recognised_by_page_title_and_by_server_name():
+    from nemla.fingerprint import http as webfp
+    assert webfp.admin_console({"title": "phpMyAdmin"}) == ("phpMyAdmin", "page title: phpMyAdmin")
+    assert webfp.admin_console({"server": "MiniServ/2.0"}) == ("Webmin", "Server: MiniServ/2.0")
+    assert webfp.admin_console({"title": "An ordinary page"}) is None
+
+
+@pytest.mark.parametrize("exc", [Cancelled(), BudgetExhausted("probe budget exhausted")])
+def test_ftp_refine_lets_cancellation_and_budget_exhaustion_propagate(monkeypatch, exc):
+    from nemla.fingerprint.ftp import Ftp
+
+    def raise_it(**kw):
+        raise exc
+    probe = Probe("127.0.0.1", 21, timeout=0.3)
+    monkeypatch.setattr(probe, "connect", raise_it)
+    with pytest.raises(type(exc)):
+        Ftp().refine(probe, Detection("ftp", "FTP", "", "", 0.5, "banner", "", "", "", False, {}))
+
+
+def test_a_mysql_greeting_without_a_version_number_is_not_one():
+    assert databases.mysql_greeting(b"\x00\x00\x00\x00\x0a" + b"not-a-version" + b"\x00" + b"\x00" * 20) is None
+
+
+def test_findings_ignore_a_scanned_port_spec_that_cannot_be_read():
+    assert nemla.assess_host({"ip": "10.0.0.5", "scanned": {"tcp": "not a port spec"}, "open_ports": []}) == []
+
+
+def test_a_port_that_is_not_open_produces_no_finding():
+    closed = {"port": 23, "proto": "tcp", "state": "closed", "service": "Telnet", "detected": "telnet"}
+    assert [f for f in nemla.assess_host({"ip": "10.0.0.5", "open_ports": [closed]}) if f["port"] == 23] == []
+
+
+def test_smtp_without_starttls_and_without_plain_auth_is_a_low_finding():
+    port = {"port": 25, "proto": "tcp", "state": "open", "service": "SMTP", "detected": "smtp", "confidence": 0.9,
+            "heuristic": False, "details": {"starttls": False}}
+    found = {f["id"]: f for f in nemla.assess_host({"ip": "10.0.0.5", "open_ports": [port]})}
+    assert found["smtp_no_starttls"]["severity"] == "low"

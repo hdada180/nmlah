@@ -366,3 +366,11 @@ def test_warnings_appear_in_the_console_and_the_report(tcp_server, tmp_path, cap
     code = nemla.main(["-t", "127.0.0.1", "-p", ",".join(map(str, ports)), "--no-ping", "--no-os", "--max-probes", "2",
                        "-o", str(out)])
     assert code == 0 and "budget" in capsys.readouterr().out and "probe budget" in out.read_text(encoding="utf-8")
+
+def test_unconfirmed_udp_ports_are_listed_in_the_html_and_markdown_reports():
+    host = host_of(rec(80, detected="http", service="HTTP"), udp_unconfirmed=[{"port": 161}, {"port": 1900}])
+    host["findings"] = assess_host(host)
+    meta = {"target": HOST, "scan_time": "2026-01-01 10:00:00", "duration": 1.0, "ports_scanned": 1,
+            "findings": nemla.summarize_findings([host])}
+    assert "161, 1900" in nemla.render_html(meta, [host])
+    assert "161, 1900" in nemla.markdown_text(meta, [host])

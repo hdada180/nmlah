@@ -231,3 +231,7 @@ def test_markdown_and_csv_reports_are_utf8_clean_in_every_language():
         for text in (nemla.markdown_text(meta, hosts, lang), nemla.csv_text(hosts, lang), nemla.json_text(meta, hosts, lang)):
             assert isinstance(text, str) and chr(0x202E) not in text and chr(0x2066) not in text
             assert "evil" in text
+
+def test_a_text_asked_for_the_wrong_placeholders_comes_back_as_written():
+    """A caller that forgets a placeholder must get readable text, not a KeyError in the middle of a scan."""
+    assert "{count}" in nemla.t("g_notice_sweep_empty", wrong=1)

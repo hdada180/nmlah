@@ -300,3 +300,25 @@ def test_the_ui_reports_capabilities_to_the_page(tmp_path):
 def test_elevation_check_never_raises():
     assert isinstance(privileges.is_elevated(), bool)
     assert socket.AF_INET is not None
+
+def test_elevation_on_posix_is_the_effective_user_id(monkeypatch):
+    monkeypatch.setattr(privileges.os, "geteuid", lambda: 0, raising=False)
+    assert privileges.is_elevated() is True
+    monkeypatch.setattr(privileges.os, "geteuid", lambda: 1000, raising=False)
+    assert privileges.is_elevated() is False
+
+
+def test_elevation_on_windows_asks_the_shell_and_survives_it_failing(monkeypatch):
+    monkeypatch.delattr(privileges.os, "geteuid", raising=False)
+    monkeypatch.setattr(privileges.sys, "platform", "win32")
+    shell = types.SimpleNamespace(IsUserAnAdmin=lambda: 1)
+    monkeypatch.setitem(privileges.sys.modules, "ctypes", types.SimpleNamespace(windll=types.SimpleNamespace(shell32=shell)))
+    assert privileges.is_elevated() is True
+    monkeypatch.setitem(privileges.sys.modules, "ctypes", types.SimpleNamespace())          # no windll at all
+    assert privileges.is_elevated() is False
+
+
+def test_elevation_on_an_unknown_system_is_false(monkeypatch):
+    monkeypatch.delattr(privileges.os, "geteuid", raising=False)
+    monkeypatch.setattr(privileges.sys, "platform", "plan9")
+    assert privileges.is_elevated() is False

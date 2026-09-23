@@ -383,3 +383,11 @@ def test_wrapper_script_does_not_run_anything_hidden_in_a_path(tmp_path, script)
     probe = subprocess.run(["sh", "-c", f"cd {tmp_path}; printf '%s' {quoted}"], capture_output=True, encoding="utf-8")
     assert probe.stdout == script and not (tmp_path / "pwned").exists()
     assert wrapper.startswith("#!/bin/sh") and "exec " in wrapper
+
+def test_discover_hosts_reports_each_live_host_and_its_progress(tcp_server):
+    port = tcp_server(lambda conn: conn.close())
+    seen, progress = [], []
+    found = discovery.discover_hosts(["127.0.0.1"], probe_ports=(port,), use_arp=False, timeout=1.0,
+                                     on_host=lambda ip, info: seen.append(ip),
+                                     on_progress=lambda done, total: progress.append((done, total)))
+    assert list(found) == ["127.0.0.1"] and seen == ["127.0.0.1"] and progress[-1] == (1, 1)

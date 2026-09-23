@@ -240,3 +240,9 @@ def test_the_package_is_split_into_the_modules_the_design_asks_for():
         assert (root / path).is_file(), path
     assert sum(1 for _ in (root / "fingerprint").glob("*.py")) >= 12
     assert len((REPO / "nemla.py").read_text(encoding="utf-8").splitlines()) < 40      # a launcher, no longer a monolith
+
+@pytest.mark.parametrize("value, message", [(-1, "must not be negative"), (10 ** 9, "must not be more than")])
+def test_a_rate_that_is_negative_or_absurd_is_refused(value, message):
+    from nemla import config
+    with pytest.raises(config.OptionError, match=message):
+        config.non_negative_float(value, "rate")

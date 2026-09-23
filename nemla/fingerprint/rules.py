@@ -82,10 +82,6 @@ def banner_os_hint(text: str):
     return None
 
 
-def printable(text, limit: int) -> str:
-    return clean_text(text, limit)
-
-
 def one_line(data: bytes, limit: int = 100) -> str:
     """The first printable line of a reply, for the banner column of a report."""
     lines = [clean_text(line, limit) for line in data.decode("utf-8", "replace").splitlines()]

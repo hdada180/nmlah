@@ -195,3 +195,7 @@ def test_neighbor_sweep_targets_can_be_any_iterable_not_just_a_list(monkeypatch)
     monkeypatch.setattr(arp, "wait_for_neighbors", lambda settle, cancel: {"10.0.0.5": "aa:bb:cc:dd:ee:01"})
     found = arp.neighbor_sweep(iter(["10.0.0.5"]), settle=0.1)
     assert found == {"10.0.0.5": "aa:bb:cc:dd:ee:01"}
+
+def test_normalize_mac_refuses_six_groups_that_are_not_hex():
+    from nemla.discovery import mac
+    assert mac.normalize_mac("zz:11:22:33:44:55") is None

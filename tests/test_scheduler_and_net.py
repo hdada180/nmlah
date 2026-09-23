@@ -558,3 +558,30 @@ def test_a_detector_that_crashes_is_reported_not_raised(tcp_server, monkeypatch)
     assert any(w["code"] == "detector_error" and "http" in w["message"] for w in diagnostics.as_list())
     assert REGISTRY
     assert wait_until(lambda: True)
+
+def test_a_job_that_starts_after_cancellation_is_dropped_unrun():
+    ran = []
+    cancel = threading.Event()
+    cancel.set()
+    scheduler = Scheduler(2, cancel=cancel)
+    assert scheduler._call(Job("h", lambda: ran.append(1))) is sched.CANCELLED and ran == []
+
+
+def test_a_limiter_that_gives_up_stops_the_submission_of_more_jobs():
+    class GivesUp:
+        def acquire(self, cancel):
+            return False
+
+    ran = []
+    assert list(Scheduler(2).results([Job("h", lambda: ran.append(1), limiter=GivesUp())])) == [] and ran == []
+
+
+def test_closing_the_results_early_leaves_no_job_behind():
+    gate = threading.Event()
+    results = Scheduler(2).results([Job("a", lambda: "quick"), Job("b", gate.wait)])
+    try:
+        job, value = next(results)
+        assert (job.key, value) == ("a", "quick")
+    finally:
+        results.close()                # the job still waiting on `gate` is abandoned, not awaited
+        gate.set()
