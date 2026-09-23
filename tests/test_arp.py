@@ -5,9 +5,10 @@ read_arp_table and wait_for_neighbors wholesale, so the real implementations of 
 platform branching, subprocess failures and safety limits inside them - were never actually exercised. These
 tests call the real functions.
 
-Not covered here, and not coverable on this machine: the real Scapy code paths (HAVE_SCAPY = True at import,
-scapy_arp_scan's actual packet send/receive, refresh_scapy's real effect) - Scapy is not installed in this
-environment. Those are exercised for real, with root and a live network, by the `privileged` CI job
+The logic around Scapy (which interface is chosen, batching, cancellation, what happens when the scan is refused
+or fails) is tested here against a fake Scapy. Not coverable on a machine without Scapy: the import-time lines that
+set HAVE_SCAPY = True, and Scapy's real packet send/receive. Those are exercised for real, with root and a live
+network, by the `privileged` CI job
 (tests/test_privileged.py::test_scapy_arp_scan_works_as_root_and_is_refused_without and its neighbours).
 """
 import shutil
@@ -199,3 +200,88 @@ def test_neighbor_sweep_targets_can_be_any_iterable_not_just_a_list(monkeypatch)
 def test_normalize_mac_refuses_six_groups_that_are_not_hex():
     from nemla.discovery import mac
     assert mac.normalize_mac("zz:11:22:33:44:55") is None
+
+# --------------------------------------------------------------------------
+# scapy_arp_scan: our logic around Scapy, against a fake Scapy
+# --------------------------------------------------------------------------
+
+class _Layer:
+    """Ether(...) / ARP(...) with the fields kept, so the fake srp can see what was asked."""
+
+    def __init__(self, **fields):
+        self.fields = fields
+
+    def __truediv__(self, other):
+        return _Layer(**{**self.fields, **other.fields})
+
+
+def fake_scapy(monkeypatch, answers=None, route=("eth9", "0.0.0.0", "10.0.0.1"), error=None):
+    """Install a fake Scapy into arp; returns the list of (addresses asked about, srp options) it received."""
+    import types
+    sent = []
+
+    def srp(packet, timeout, retry, verbose, **options):
+        asked = packet.fields["pdst"]
+        sent.append((asked, options))
+        if error is not None:
+            raise error
+        replies = [(None, types.SimpleNamespace(psrc=ip, hwsrc=mac)) for ip, mac in (answers or {}).items() if ip in asked]
+        return replies, []
+
+    def find_route(ip):
+        if isinstance(route, Exception):
+            raise route
+        return route
+
+    monkeypatch.setattr(arp, "HAVE_SCAPY", True)
+    monkeypatch.setattr(arp, "srp", srp, raising=False)
+    monkeypatch.setattr(arp, "Ether", _Layer, raising=False)
+    monkeypatch.setattr(arp, "ARP", _Layer, raising=False)
+    monkeypatch.setattr(arp, "scapy_conf", types.SimpleNamespace(route=types.SimpleNamespace(route=find_route)), raising=False)
+    monkeypatch.setattr(arp, "refresh_scapy", lambda: None)
+    return sent
+
+
+def test_the_scapy_arp_scan_says_it_cannot_run_without_scapy(monkeypatch):
+    monkeypatch.setattr(arp, "HAVE_SCAPY", False)
+    assert arp.scapy_arp_scan(["10.0.0.5"]) is None
+
+
+def test_the_scapy_arp_scan_returns_who_answered_through_the_interface_that_reaches_the_targets(monkeypatch):
+    sent = fake_scapy(monkeypatch, answers={"10.0.0.5": "aa:bb:cc:00:00:05"})
+    assert arp.scapy_arp_scan(["10.0.0.5", "10.0.0.6"]) == {"10.0.0.5": "aa:bb:cc:00:00:05"}
+    assert sent == [(["10.0.0.5", "10.0.0.6"], {"iface": "eth9"})]
+
+
+def test_the_scapy_arp_scan_asks_about_at_most_512_addresses_at_a_time(monkeypatch):
+    sent = fake_scapy(monkeypatch)
+    ips = [f"10.1.{i // 250}.{i % 250 + 1}" for i in range(1100)]
+    assert arp.scapy_arp_scan(ips) == {}
+    assert [len(asked) for asked, _ in sent] == [512, 512, 76]
+
+
+def test_the_scapy_arp_scan_still_runs_when_no_interface_can_be_chosen(monkeypatch):
+    sent = fake_scapy(monkeypatch, route=OSError("no route"), answers={"10.0.0.5": "aa:bb:cc:00:00:05"})
+    assert arp.scapy_arp_scan(["10.0.0.5"]) == {"10.0.0.5": "aa:bb:cc:00:00:05"}
+    assert sent[0][1] == {}                              # left to Scapy's own default
+
+
+def test_the_scapy_arp_scan_stops_when_cancelled(monkeypatch):
+    from nemla.net import Cancelled
+    sent = fake_scapy(monkeypatch)
+    cancel = threading.Event()
+    cancel.set()
+    with pytest.raises(Cancelled):
+        arp.scapy_arp_scan(["10.0.0.5"], cancel=cancel)
+    assert sent == []
+
+
+def test_the_scapy_arp_scan_lets_a_refusal_reach_the_caller(monkeypatch):
+    fake_scapy(monkeypatch, error=PermissionError("Operation not permitted"))
+    with pytest.raises(PermissionError):
+        arp.scapy_arp_scan(["10.0.0.5"])
+
+
+def test_the_scapy_arp_scan_reports_any_other_failure_as_unavailable(monkeypatch):
+    fake_scapy(monkeypatch, error=RuntimeError("libpcap exploded"))
+    assert arp.scapy_arp_scan(["10.0.0.5"]) is None
