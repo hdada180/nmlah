@@ -26,6 +26,18 @@ are reconstructed from the git history rather than pinned to a release date.
 ### Removed
 - `nemla/fingerprint/rdp.py`'s `_tpkt_complete`: dead code, defined but never called anywhere in the file.
 
+### Fixed
+- `nemla --install-launcher` failed after a normal `pip install`: it looked for a `nemla.py` file next to the
+  package, which a pip install never creates. It now uses the installed `nemla` command when there is one, and
+  only falls back to `python3 nemla.py` in a plain git checkout.
+- `write_csv()` (the public function) wrote plain UTF-8, while `--csv` writes UTF-8 with a byte-order mark so that
+  Excel opens non-ASCII text correctly; the two now produce the same file for the same data.
+- The interface server could lose its `413 Payload Too Large` answer to a request body over 64 KB: it refused the
+  body without reading it, then closed the connection while the client was still sending, and the resulting TCP
+  reset could destroy the answer before the client read it (about one request in eight on Windows). It now
+  answers with `Connection: close`, discards what the client is still sending (never kept, at most 1 MiB and 2
+  seconds), and only then closes.
+
 ## [2.0.0] - 2026-09-21
 
 ### Added
