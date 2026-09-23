@@ -50,6 +50,24 @@ class TargetSet:
     def all_local(self, predicate) -> bool:
         return len(self) > 0 and all(predicate(ip) for ip in self)
 
+    def contains_all(self, other: TargetSet) -> bool:
+        """True when every address of `other` is also in this set.
+
+        Works on the integer spans (this set's are merged, so an interval inside the union lies inside one span):
+        a /16 checked against a /8 costs a few comparisons, never 65,536 lookups. An address with a zone id
+        (fe80::1%eth0) counts when it is listed as is, or when the address itself lies inside a span."""
+        for version, first, last in other._spans:
+            if not any(v == version and low <= first and last <= high for v, low, high in self._spans):
+                return False
+        for text in other._scoped:
+            if text in self._scoped:
+                continue
+            address = parse_ip(text)
+            if address is None or not any(v == address.version and low <= int(address) <= high
+                                          for v, low, high in self._spans):
+                return False
+        return True
+
 
 def _merge(spans: list) -> list:
     """Sort spans and join the ones that touch or overlap, so no address repeats."""
