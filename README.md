@@ -18,7 +18,7 @@ Nemla (Arabic: **نملة**, "ant") is a small network reconnaissance platform w
 
 - **A real architecture.** The single 1,900-line `nemla.py` became the `nemla/` package: targets, discovery, a bounded scheduler, TCP and UDP scanners, one small plugin per protocol, OS detection, findings, reports, history and guard. `python3 nemla.py ...` and `import nemla` keep working. See [docs/architecture.md](docs/architecture.md).
 - **Shorter commands.** `nemla 192.168.1.10` instead of `nemla -t 192.168.1.10`; `nemla watch`, `nemla diff`, `nemla guard` and `nemla ui` for the modes; `-p all` for every port. Every 1.x flag still works.
-- **IPv6** everywhere (targets, scanning, discovery, reports, history, the interface).
+- **IPv6** in targets, TCP and UDP scanning, reports, history and the interface. Discovery probes the addresses you give it; it does not find unknown IPv6 neighbours (see [IPv6 and neighbour discovery](#ipv6-and-neighbour-discovery)).
 - **UDP scanning** with honest states: `open`, `closed`, `open|filtered`, `unknown`, rate limited and safe.
 - **Service fingerprinting as plugins:** HTTP/HTTPS, SSH (with the algorithms the server offers), FTP, SMTP, POP3, IMAP, DNS, Redis, Memcached, MySQL/MariaDB, PostgreSQL, RDP (NLA), SMB (SMBv1, signing), Telnet, VNC, plus TLS and certificate analysis with Nemla's own X.509 reader.
 - **Confidence everywhere.** Every service and OS result carries a confidence and its evidence. A guess from a port number alone is labelled a guess.
@@ -73,6 +73,8 @@ pip install scapy        # or: pip install -r requirements.txt
 
 You can also install it as a command: `pip install .` (or `pip install ".[arp]"`), then run `nemla 192.168.1.10` (or `python -m nemla 192.168.1.10`) from any folder.
 
+**Requirements and versions.** Python 3.8 or newer to run it, and nothing else (Scapy is optional). Building it from source (`pip install .`, `python -m build`) needs Python 3.9 or newer, because the package metadata uses the SPDX `license` field that setuptools 77 reads; a wheel built elsewhere installs and runs on 3.8. CI runs the whole test suite on Python 3.8 to 3.14 on Linux and on 3.8 and 3.13 on Windows, and installs the built wheel alone into a clean virtual environment on the same versions; macOS is expected to work but is not tested. Nemla is not published on PyPI: install it from a checkout (`pip install .`) or from a wheel you built (`python -m build`). `nemla --version` prints the version; it is written in one place, `nemla/config.py`, and the package metadata, `import nemla`, the command line, the web API and every report all read it from there.
+
 ## Quick start
 
 Three commands are enough to start:
@@ -120,7 +122,7 @@ The 1.x form keeps working: `nemla -t 192.168.1.10 --udp` is the same as `nemla 
 | `--top-ports` | Also scan the built-in list of common ports (the default when `-p` is omitted) |
 | `--udp` | Also probe the common UDP ports |
 | `--udp-ports LIST` | UDP ports to probe (implies `--udp`) |
-| `--udp-timeout S` / `--udp-rate PPS` | Wait per UDP probe (default 1.0) / packets per second (default 200) |
+| `--udp-timeout S` / `--udp-rate PPS` | Wait per UDP probe (default 1.0) / packets per second (default 200; `0` = no limit, which the web interface never allows) |
 | `-o`, `--output` | HTML report path (default `nemla_report.html`) |
 | `--json`, `--csv`, `--md`, `--sarif FILE` | Also write the results in that format |
 | `--no-ping` | Skip host discovery; treat every target as up |
@@ -206,6 +208,7 @@ Nemla can also watch a network instead of scanning it:
 - **Decoy ports.** Ports that no legitimate device has a reason to touch (2222, 2323, 5901, 8888 and 3307 by default). Whatever connects is probing your network.
 - **Unknown devices.** The first check learns your devices by MAC address; a device that was not there before raises an alert (with its maker when known).
 - **ARP changes.** An address that suddenly answers from a different device.
+- **IPv4 only.** The decoy ports listen on IPv4 addresses and the network sweep covers the local IPv4 subnet, so connections over IPv6 and devices that only exist on IPv6 are not watched. (Scanning and reports are not limited this way; see below.)
 
 Guard alerts carry a **confidence and the evidence** behind it. A changed ARP binding is **not** proof of spoofing: a replaced network card, a DHCP change or a virtual machine looks the same, so Nemla weighs the gateway, how often the binding flips, whether the new address belongs to a known device and whether the old one still answers, and never goes above 0.85. Guard only watches: it never attacks back, never scans other machines and never changes your firewall (for a device you want to block it prints the exact command and leaves running it to you).
 
@@ -246,11 +249,14 @@ Nemla scans hostile networks and shows what strangers wrote, so it is hardened a
 - **Local server:** listens on `127.0.0.1` only; a random per-launch token (header for writes, address for reads); `Host`, `Origin` and `Sec-Fetch-Site` checks (DNS rebinding, cross-site requests); body size cap; idle-connection timeouts; ceilings on connections and event streams; strict Content-Security-Policy; no traceback ever leaves the server; scan parameters are validated and clamped; the first scan needs consent.
 - **Malicious banners and certificates:** every read is bounded in size and time; text from the network is stripped of control characters, terminal escapes and bidi overrides before it is logged or stored; the DER certificate parser is fuzz-tested and only ever raises one error type; the page renders with `textContent`, reports escape every field (HTML entities, CSV formula guard, Markdown entities).
 - **Resource exhaustion:** hostile port ranges (`1-99999999999`) are refused before they are expanded; a million-address target is a few integers; the scheduler pulls jobs lazily; deeply nested JSON is refused; history files are size-capped.
-- **File system:** history and report files are written to a temporary file and renamed into place (private permissions); ids are UUIDs validated before they touch a path; static files cannot leave the web folder.
+- **File system:** everything Nemla writes about a scan - reports in every format, the history, the Guard's alert log and state, the `--watch-log` change log - is owner-only: files are created `0600` and new folders `0700` from the start (never restricted afterwards), each is written to a random temporary name and renamed into place, and a symbolic link planted at an output path is replaced, never written through. (On Windows the profile's own access rules apply.) A report you want to share is yours to `chmod`. Ids are UUIDs validated before they touch a path; static files cannot leave the web folder.
 - **Commands:** no shell anywhere; `ping` receives only validated addresses; the Linux launcher quotes every path.
 - **Races:** the language of a scan is per thread (no global switching), counters are locked.
 - **Unsafe deserialisation:** only `json.loads` on untrusted data; no pickle, eval or exec (a test scans the source for them).
 - **SSRF:** probes never follow redirects or URLs found in banners; a target is only what you typed.
+- **What the local interface reveals:** `/api/info` (host name, local address, whether Nemla runs as root, whether Scapy is present, the packet capabilities) is answered only with the token and after the Host, Origin and Sec-Fetch-Site checks, and only on the loopback interface. Do not forward or proxy that port to a network you do not trust: whoever holds the token can start scans from this machine.
+- **The Guard's decoy ports are the one thing that listens on the LAN**, on purpose: they send a fixed banner, accept no login, cap concurrent clients and read at most a few bytes.
+- **Plugins:** detectors are ordinary Python modules inside the `nemla/fingerprint/` package, registered when the package is imported. Nemla loads nothing from a configured path, an entry point or a download, and it offers no sandbox: a module you add runs with the full privileges of the process, exactly like the rest of the code. Only add code you have read.
 
 ## What needs elevated privileges
 

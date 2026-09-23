@@ -86,6 +86,13 @@ Events for the interface (`emit`): `phase`, `progress`, `host`, `host_start`, `p
 
 ## Adding a protocol (a detector plugin)
 
+"Plugin" here means one small module per protocol inside `nemla/fingerprint/`, registered with `@register` when the
+package is imported. There is no external plugin loading: nothing is read from a configured path, an entry point or a
+download, so there is no plugin metadata to trust and no version negotiation. A detector is ordinary Python that runs
+with the full privileges of the process; Nemla does not pretend to sandbox it, so only add code you have read. What
+the network sends a detector is a different matter: it is attacker-controlled, and `Probe` bounds every read in size and
+time (see README, Security).
+
 Create `nemla/fingerprint/myproto.py`:
 
 ```python

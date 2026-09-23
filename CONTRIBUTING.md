@@ -21,10 +21,12 @@ that turns Nemla into an offensive tool will not be accepted, whatever the frami
 ```bash
 git clone https://github.com/hdada180/nmlah.git
 cd nmlah
-pip install ".[dev]"        # pytest, pyflakes, ruff, mypy, coverage
+pip install ".[dev]"        # pytest, pyflakes, ruff, mypy, coverage (Python 3.9 or newer: see below)
 ```
 
-No compiled parts, no required third-party dependencies for the tool itself (Scapy is optional, for raw ARP and
+Nemla runs on Python 3.8 and newer, but building it from source (`pip install .`) needs 3.9 or newer, since the
+SPDX `license` field in `pyproject.toml` needs setuptools 77; CI installs the built wheel on 3.8 to prove it still runs
+there. No compiled parts, no required third-party dependencies for the tool itself (Scapy is optional, for raw ARP and
 SYN fingerprinting; see [docs/privileges.md](docs/privileges.md)).
 
 ## Making a change
@@ -50,12 +52,20 @@ SYN fingerprinting; see [docs/privileges.md](docs/privileges.md)).
 ## Running the checks
 
 ```bash
-python -m pytest -q                                                     # the suite (~1,300 tests, a few minutes)
+python -m pytest -q                                                     # the suite (~1,400 tests, a few minutes)
 python -m ruff check .                                                  # lint
-python -m pyflakes nemla nemla_ui nemla.py
+python -m pyflakes nemla nemla_ui nemla.py tests benchmarks .github/scripts
 python -m mypy                                                          # type check
 python -m coverage run -m pytest -q && python -m coverage report -m     # which lines your change did not test
+python -m build && python .github/scripts/check_dist.py dist            # the wheel and sdist match the source tree
+python .github/scripts/smoke_installed.py --source-checkout             # a real scan, every report, the web page
 ```
+
+The version is written once, in `nemla/config.py`; `pyproject.toml` reads it (`dynamic = ["version"]`), and a test
+fails if a second copy appears. Sub-packages are found automatically; a data file inside a package must be listed
+under `[tool.setuptools.package-data]`, and `check_dist.py` (run by CI) fails when a file of the source tree is missing
+from the wheel. CI also installs the wheel alone into a clean virtual environment and runs `smoke_installed.py` from
+outside the checkout, which is how a bug that only appears after `pip install` gets caught.
 
 A few tests are gated behind an environment they need and are skipped elsewhere, with the reason printed:
 `integration` (a real Samba/xrdp lab via Docker, see [tests/integration/README.md](tests/integration/README.md)),

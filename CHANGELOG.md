@@ -7,6 +7,16 @@ are reconstructed from the git history rather than pinned to a release date.
 ## [Unreleased]
 
 ### Added
+- CI proves what ships, not only the source tree: a `package` job (`compileall`, `python -m build`, `twine check --strict`,
+  and `.github/scripts/check_dist.py`, which compares the wheel and the sdist with the source tree: nothing missing,
+  nothing extra, one version) and an `installed` job that installs the wheel alone into a clean virtual environment
+  (Python 3.8-3.14 on Linux, 3.8 and 3.13 on Windows) and runs `.github/scripts/smoke_installed.py` from outside the
+  checkout: package location, one version everywhere, every module importing in a fresh interpreter, a real scan in
+  every report format, and the web page and its security checks.
+- `MANIFEST.in`, so the sdist carries the tests, the docs, the changelog and the source-checkout launcher, and no caches.
+- Trove classifiers for Python 3.8 to 3.14, the versions CI actually tests.
+- A test that every module imports as the first import of a fresh interpreter, and one that the version is written in
+  exactly one place.
 - `nemla 192.168.1.10` as a plain, positional way to give a target; `nemla ui`, `nemla guard`,
   `nemla watch TARGET [EVERY]` and `nemla diff OLD NEW` as one-word equivalents of the flags they stand for.
   `-t TARGET` and every 1.x flag still work exactly as before.
@@ -20,6 +30,12 @@ are reconstructed from the git history rather than pinned to a release date.
   virtualization platforms.
 
 ### Changed
+- The version is written once, in `nemla/config.py`; `pyproject.toml` now reads it (`dynamic = ["version"]`) instead of
+  repeating it, and the packages are found automatically (`[tool.setuptools.packages.find]`) instead of listed by hand.
+- **Scan output is now owner-only.** Reports (HTML, JSON, CSV, Markdown, SARIF), the Guard's alert log and state and the
+  `--watch-log` change log are created `0600`, and folders Nemla creates `0700`, on POSIX systems; before, reports were
+  `0644` and the alert and change logs took the process umask. If you serve reports to other users, `chmod` them.
+  Windows is unchanged. The README already described these files as private.
 - `nemla/discovery/arp.py`'s ARP/neighbour-table lookup now takes the longest matching MAC prefix regardless of
   table order, so a short platform prefix can never shadow a more specific vendor entry.
 
@@ -27,6 +43,10 @@ are reconstructed from the git history rather than pinned to a release date.
 - `nemla/fingerprint/rdp.py`'s `_tpkt_complete`: dead code, defined but never called anywhere in the file.
 
 ### Fixed
+- `--watch` no longer stops for good when a round's report, history entry or `--watch-log` cannot be written (a full
+  disk, a mistyped path): it says so and keeps watching.
+- The Guard's state file was written through the predictable name `guard.tmp` and only restricted after its content was
+  written; it now goes through a random, owner-only temporary file renamed into place, like the history.
 - `nemla --install-launcher` failed after a normal `pip install`: it looked for a `nemla.py` file next to the
   package, which a pip install never creates. It now uses the installed `nemla` command when there is one, and
   only falls back to `python3 nemla.py` in a plain git checkout.
