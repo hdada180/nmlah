@@ -501,6 +501,36 @@ def test_smb_parsers_reject_garbage(data):
     assert smb.parse_smb1(data) is None and smb.parse_smb2(data) is None
 
 
+def test_smb1_parser_rejects_a_nonzero_status():
+    header = b"\xffSMB" + bytes([0x72]) + struct.pack("<I", 1) + b"\x00" * 23   # status=1, not STATUS_SUCCESS
+    data = b"\x00\x00\x00\x28" + header + b"\x11" + struct.pack("<H", 0) + bytes([0x03])
+    assert smb.parse_smb1(data) is None
+
+
+def test_smb2_parser_rejects_an_unrecognized_dialect():
+    assert smb.parse_smb2(smb2_reply(dialect=0x9999)) is None
+
+
+def test_smb_ask_returns_empty_when_the_connection_fails(closed_port):
+    result = smb.Smb()._ask(Probe("127.0.0.1", closed_port, timeout=0.3), smb.smb2_negotiate())
+    assert result == b""
+
+
+def test_smb_probe_returns_none_when_neither_negotiate_gets_an_answer(tcp_server):
+    port = tcp_server(lambda conn: conn.close())    # accepts, then hangs up: not an SMB service
+    assert smb.Smb().probe(Probe("127.0.0.1", port, timeout=0.3)) is None
+
+
+@pytest.mark.parametrize("exc", [Cancelled(), BudgetExhausted("probe budget exhausted")])
+def test_smb_ask_lets_cancellation_and_budget_exhaustion_propagate(monkeypatch, exc):
+    def raise_it(**kw):
+        raise exc
+    probe = Probe("127.0.0.1", 445, timeout=0.3)
+    monkeypatch.setattr(probe, "connect", raise_it)
+    with pytest.raises(type(exc)):
+        smb.Smb()._ask(probe, smb.smb2_negotiate())
+
+
 # --------------------------------------------------------------------------
 # HTTP and TLS
 # --------------------------------------------------------------------------
