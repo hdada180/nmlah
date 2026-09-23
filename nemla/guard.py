@@ -31,6 +31,7 @@ from .discovery.arp import neighbor_sweep, neighbor_table_status, nudge_arp, par
 from .discovery.mac import mac_is_local, normalize_mac
 from .log import logger
 from .net import ip_sort_key, parse_ip
+from .reports import PRIVATE_DIR, open_private_append, write_atomic
 
 _REEXPORTED = (nudge_arp, parse_arp_table, read_arp_table)  # kept importable from here for older code
 
@@ -103,10 +104,10 @@ class AlertLog:
         if self.path is None:
             return
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.parent.mkdir(mode=PRIVATE_DIR, parents=True, exist_ok=True)
             if self.path.exists() and self.path.stat().st_size > LOG_LIMIT:
                 self.path.replace(self.path.with_suffix(".jsonl.1"))
-            with open(self.path, "a", encoding="utf-8") as fh:
+            with open_private_append(self.path) as fh:          # who connected and from where: owner-only
                 fh.write(json.dumps(alert, ensure_ascii=False) + "\n")
         except OSError:
             pass  # a full disk must not stop the watch
@@ -290,15 +291,11 @@ def load_state(path) -> dict:
 
 def save_state(path, state: dict) -> None:
     target = Path(path)
-    tmp = target.with_suffix(".tmp")
     try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
-        try:
-            tmp.chmod(0o600)
-        except OSError:
-            pass
-        tmp.replace(target)
+        target.parent.mkdir(mode=PRIVATE_DIR, parents=True, exist_ok=True)
+        # a random temporary name that is owner-only from the moment it exists, renamed into place: no predictable
+        # name for anyone else to plant a link at, and never a half-written state file
+        write_atomic(str(target), json.dumps(state, indent=1).encode("utf-8"))
     except OSError as exc:
         logger.warning("could not save the guard state to %s: %s", target, exc)
 

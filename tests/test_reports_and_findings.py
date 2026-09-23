@@ -283,7 +283,7 @@ def test_report_files_are_written_atomically(tmp_path):
         reports.write_report(str(target), "html", {"target": "x"}, hosts)             # bad meta: a failure ...
     assert target.read_text(encoding="utf-8") == old                                  # ... never truncates the old file
     if os.name == "posix":
-        assert oct(target.stat().st_mode & 0o777) == "0o644"
+        assert oct(target.stat().st_mode & 0o777) == "0o600"      # scan results are private
 
 
 def test_write_atomic_tolerates_a_filesystem_that_refuses_chmod(tmp_path, monkeypatch):
@@ -374,3 +374,51 @@ def test_unconfirmed_udp_ports_are_listed_in_the_html_and_markdown_reports():
             "findings": nemla.summarize_findings([host])}
     assert "161, 1900" in nemla.render_html(meta, [host])
     assert "161, 1900" in nemla.markdown_text(meta, [host])
+
+posix_only = pytest.mark.skipif(os.name != "posix", reason="owner-only permissions and symbolic links are checked on POSIX")
+
+
+@posix_only
+def test_every_report_writer_makes_owner_only_files(tmp_path):
+    hosts = [host_of(rec(80, detected="http", service="HTTP"))]
+    meta = {"target": HOST, "scan_time": "2026-01-01 10:00:00", "duration": 1.0, "ports_scanned": 1,
+            "findings": nemla.summarize_findings(hosts)}
+    for name, write in (("r.html", lambda p: reports.write_report(p, "html", meta, hosts)),
+                        ("r.json", lambda p: reports.write_json(p, meta, hosts)),
+                        ("r.csv", lambda p: reports.write_csv(p, hosts)),
+                        ("r.md", lambda p: reports.write_report(p, "md", meta, hosts)),
+                        ("r.sarif", lambda p: reports.write_report(p, "sarif", meta, hosts))):
+        write(str(tmp_path / name))
+        assert oct((tmp_path / name).stat().st_mode & 0o777) == "0o600", name
+
+
+@posix_only
+def test_a_report_is_never_written_through_a_symbolic_link(tmp_path):
+    """A link planted at the output path must be replaced, not followed: the file it points at stays untouched."""
+    victim = tmp_path / "victim.txt"
+    victim.write_text("precious", encoding="utf-8")
+    target = tmp_path / "report.html"
+    target.symlink_to(victim)
+    reports.write_atomic(str(target), b"<html>scan</html>")
+    assert victim.read_text(encoding="utf-8") == "precious"
+    assert not target.is_symlink() and target.read_bytes() == b"<html>scan</html>"
+
+
+def test_appending_to_a_private_log_keeps_what_was_there(tmp_path):
+    path = tmp_path / "changes.jsonl"
+    for line in ("one", "two"):
+        with reports.open_private_append(str(path)) as fh:
+            fh.write(line + "\n")
+    assert path.read_text(encoding="utf-8").splitlines() == ["one", "two"]
+    if os.name == "posix":
+        assert oct(path.stat().st_mode & 0o777) == "0o600"
+
+
+@posix_only
+def test_an_older_log_that_others_could_read_is_tightened_when_it_is_next_written(tmp_path):
+    path = tmp_path / "old.jsonl"
+    path.write_text("from an older version\n", encoding="utf-8")
+    path.chmod(0o644)
+    with reports.open_private_append(str(path)) as fh:
+        fh.write("now\n")
+    assert oct(path.stat().st_mode & 0o777) == "0o600" and path.read_text(encoding="utf-8").endswith("now\n")

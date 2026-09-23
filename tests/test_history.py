@@ -1,5 +1,6 @@
 import http.client
 import json
+import os
 import socket
 import threading
 import time
@@ -374,3 +375,51 @@ def test_watch_stops_when_a_round_is_interrupted_part_way(monkeypatch, tmp_path)
     monkeypatch.setattr(nemla.cli, "run_scan", lambda *args, **kwargs: ([], {"discovered": 2, "cancelled": True}))
     assert nemla.main(["-t", "127.0.0.1", "-p", "80", "--watch", "10s"]) == 0
     assert history.list_scans(tmp_path) == []             # a partial scan proves nothing, so nothing was saved
+
+def watch_rounds(monkeypatch, tmp_path):
+    """Two rounds of a fake scan: the second finds a new port and a new host."""
+    from nemla_ui import guard
+
+    monkeypatch.setattr(guard, "data_dir", lambda: tmp_path)
+    rounds = [[host("127.0.0.1", [port(22)])],
+              [host("127.0.0.1", [port(22), port(23)]), host("127.0.0.2")]]
+    meta = {"target": "127.0.0.1", "scan_time": "now", "duration": 0.1, "ports_scanned": 1, "cancelled": False,
+            "findings": {"info": 0, "low": 0, "medium": 0, "high": 0}}
+
+    def fake_scan(*args, **kwargs):
+        hosts = rounds.pop(0)
+        return hosts, {**meta, "discovered": len(hosts)}
+
+    def fake_sleep(seconds):
+        if not rounds:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(nemla.cli, "run_scan", fake_scan)
+    monkeypatch.setattr(nemla.time, "sleep", fake_sleep)
+
+
+def test_a_watch_keeps_going_when_the_report_the_history_and_the_change_log_cannot_be_written(monkeypatch, tmp_path, capsys):
+    """A watch is meant to run for days: a full disk or a mistyped path is reported, not fatal."""
+    watch_rounds(monkeypatch, tmp_path)
+
+    def full_disk(*args, **kwargs):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(history, "save", full_disk)
+    missing = tmp_path / "no-such-folder"
+    code = nemla.main(["-t", "127.0.0.1", "-p", "22", "--watch", "10s", "--watch-log", str(missing / "changes.jsonl"),
+                       "-o", str(missing / "r.html")])
+    out = capsys.readouterr().out
+    assert code == 0 and "Watch stopped." in out
+    assert "Cannot write the report" in out and "Cannot save this round to the history" in out
+    assert "Cannot write the change log" in out
+    assert "port 23 opened" in out and "New host: 127.0.0.2" in out       # the comparison itself carried on
+
+
+def test_the_watch_change_log_is_written_owner_only(monkeypatch, tmp_path):
+    watch_rounds(monkeypatch, tmp_path)
+    log_file = tmp_path / "changes.jsonl"
+    assert nemla.main(["-t", "127.0.0.1", "-p", "22", "--watch", "10s", "--watch-log", str(log_file),
+                       "-o", str(tmp_path / "r.html")]) == 0
+    assert json.loads(log_file.read_text(encoding="utf-8").splitlines()[0])["summary"]["new_hosts"] == 1
+    if os.name == "posix":
+        assert oct(log_file.stat().st_mode & 0o777) == "0o600" and oct((tmp_path / "r.html").stat().st_mode & 0o777) == "0o600"

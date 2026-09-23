@@ -16,6 +16,7 @@ import time
 import uuid
 from pathlib import Path
 
+from .reports import PRIVATE_DIR, PRIVATE_FILE
 from .reports.data import json_text
 
 KEEP = 60
@@ -52,9 +53,9 @@ def valid_id(scan_id) -> bool:
 def save(data_dir, engine, meta: dict, hosts: list) -> str:
     """Store a scan and return its id (a UUID). `engine` is accepted for older callers and unused."""
     directory = folder(data_dir)
-    directory.mkdir(parents=True, exist_ok=True)
+    directory.mkdir(mode=PRIVATE_DIR, parents=True, exist_ok=True)
     try:
-        os.chmod(directory, 0o700)
+        os.chmod(directory, PRIVATE_DIR)
     except OSError:
         pass
     scan_id = meta.get("scan_id")
@@ -66,7 +67,7 @@ def save(data_dir, engine, meta: dict, hosts: list) -> str:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(json_text(stored, hosts))
         try:
-            os.chmod(tmp, 0o600)
+            os.chmod(tmp, PRIVATE_FILE)
         except OSError:
             pass
         os.replace(tmp, directory / f"{scan_id}.json")

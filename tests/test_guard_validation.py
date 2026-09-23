@@ -7,6 +7,7 @@ Scapy, root or a real network. (The real-kernel version is in test_privileged.py
 """
 import json
 import logging
+import os
 import socket
 import time
 
@@ -487,7 +488,7 @@ def test_own_addresses_survive_a_machine_that_can_neither_name_nor_route_itself(
 
 
 def test_the_guard_state_is_saved_even_where_chmod_is_refused(tmp_path, monkeypatch):
-    monkeypatch.setattr(guard.Path, "chmod", lambda self, *args, **kwargs: (_ for _ in ()).throw(OSError("no chmod")))
+    monkeypatch.setattr(os, "chmod", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("no chmod")))
     path = tmp_path / "guard.json"
     guard.save_state(path, guard.new_state())
     assert json.loads(path.read_text(encoding="utf-8"))["learning"] is True
@@ -524,3 +525,45 @@ def test_decoys_bind_with_address_reuse_on_systems_other_than_windows(monkeypatc
         assert ports and not failed
     finally:
         wire.stop()
+
+posix_only = pytest.mark.skipif(os.name != "posix", reason="owner-only permissions and symbolic links are checked on POSIX")
+
+
+@posix_only
+def test_the_alert_log_and_its_new_folder_are_owner_only(tmp_path):
+    log = guard.AlertLog(tmp_path / "fresh" / "alerts.jsonl")
+    log.add({"kind": "tripwire", "src_ip": "203.0.113.9"})
+    assert oct((tmp_path / "fresh" / "alerts.jsonl").stat().st_mode & 0o777) == "0o600"
+    assert oct((tmp_path / "fresh").stat().st_mode & 0o777) == "0o700"
+
+
+def test_the_guard_state_is_replaced_atomically_and_leaves_no_temporary_file(tmp_path):
+    path = tmp_path / "data" / "guard.json"
+    state = guard.new_state()
+    guard.save_state(path, state)
+    state["learning"] = False
+    guard.save_state(path, state)
+    assert json.loads(path.read_text(encoding="utf-8"))["learning"] is False
+    assert [p.name for p in path.parent.iterdir()] == ["guard.json"]
+    if os.name == "posix":
+        assert oct(path.stat().st_mode & 0o777) == "0o600" and oct(path.parent.stat().st_mode & 0o777) == "0o700"
+
+
+@posix_only
+def test_a_link_planted_at_the_old_temporary_name_is_never_followed(tmp_path):
+    """The state used to go through the predictable name guard.tmp, which anyone who could write to the folder could
+    turn into a link to a file of the owner's. The temporary name is random now."""
+    victim = tmp_path / "victim.txt"
+    victim.write_text("precious", encoding="utf-8")
+    (tmp_path / "guard.tmp").symlink_to(victim)
+    guard.save_state(tmp_path / "guard.json", guard.new_state())
+    assert victim.read_text(encoding="utf-8") == "precious"
+
+def test_the_decoy_accept_loop_ends_when_its_socket_is_closed():
+    """Deterministic version of what stop() causes in the background thread: accept() fails, the loop returns."""
+    class Closed:
+        def accept(self):
+            raise OSError("the listening socket was closed")
+
+    wire = guard.Tripwire([], lambda *args: None)
+    assert wire._accept(Closed(), 2222) is None

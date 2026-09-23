@@ -20,7 +20,7 @@ from .findings import SEV_RANK, finding_text
 from .i18n import STRINGS, t
 from . import i18n
 from .log import enable_debug, log
-from .reports import write_report
+from .reports import open_private_append, write_report
 from .targets import iter_targets, parse_ports
 
 # -- the startup banner ------------------------------------------------------------
@@ -221,7 +221,7 @@ def build_parser() -> argparse.ArgumentParser:
     udp.add_argument("--udp-timeout", type=timeout_arg, default=DEFAULT_UDP_TIMEOUT, metavar="SECONDS",
                      help=f"wait per UDP probe (default {DEFAULT_UDP_TIMEOUT})")
     udp.add_argument("--udp-rate", type=rate_arg, default=DEFAULT_UDP_RATE, metavar="PPS",
-                     help=f"limit UDP packets per second (default {DEFAULT_UDP_RATE:g})")
+                     help=f"limit UDP packets per second (default {DEFAULT_UDP_RATE:g}; 0 = no limit)")
 
     watch = p.add_argument_group("watching for changes")
     watch.add_argument("--watch", metavar="INTERVAL",
@@ -370,8 +370,16 @@ def run_watch(args) -> int:
                 log(t("interrupted"))
                 return 0
             if meta["discovered"]:
-                write_report(args.output, "html", meta, hosts)
-                scan_id = history_mod.save(folder, None, meta, hosts)
+                # a full disk or a mistyped path must not end a watch that is meant to run for days: say so, keep watching
+                try:
+                    write_report(args.output, "html", meta, hosts)
+                except OSError as err:
+                    log(f"Cannot write the report to {args.output}: {err.strerror or err}; still watching.")
+                try:                              # the history is what the next round is compared with
+                    scan_id = history_mod.save(folder, None, meta, hosts)
+                except OSError as err:
+                    log(f"Cannot save this round to the history: {err.strerror or err}; still watching.")
+                    scan_id = None
                 if previous is None:
                     log(t("w_first"))
                 else:
@@ -379,10 +387,13 @@ def run_watch(args) -> int:
                     for line in diff_lines(diff):
                         log(line)
                     if args.watch_log and diff["summary"]["changed"]:
-                        with open(args.watch_log, "a", encoding="utf-8") as fh:
-                            fh.write(json.dumps({"time": meta["scan_time"], "target": args.target,
-                                                 "scan_id": scan_id, "summary": diff["summary"],
-                                                 "lines": diff_lines(diff)}, ensure_ascii=False) + "\n")
+                        try:
+                            with open_private_append(args.watch_log) as fh:
+                                fh.write(json.dumps({"time": meta["scan_time"], "target": args.target,
+                                                     "scan_id": scan_id, "summary": diff["summary"],
+                                                     "lines": diff_lines(diff)}, ensure_ascii=False) + "\n")
+                        except OSError as err:
+                            log(f"Cannot write the change log {args.watch_log}: {err.strerror or err}")
                 previous = hosts
             deadline = time.monotonic() + interval
             while time.monotonic() < deadline:
