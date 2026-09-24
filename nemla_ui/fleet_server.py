@@ -30,7 +30,8 @@ from nemla.reports import write_atomic
 from nemla_ui.server import CSP, DISCARD_LIMIT, DISCARD_TIMEOUT, MAX_BODY, MIME, REQUEST_TIMEOUT, WEB_DIR, BoundedServer
 
 MAX_UPLOADS = 4                    # results being received at once (each may be up to 32 MiB in memory)
-PAGES = {"/": "fleet.html", "/fleet.js": "fleet.js", "/fleet.css": "fleet.css"}
+PAGES = {"/": "fleet.html", "/fleet.js": "fleet.js", "/fleet.css": "fleet.css",
+         "/brand/nemla-logo.svg": "brand/nemla-logo.svg", "/brand/nemla-icon.svg": "brand/nemla-icon.svg"}
 
 
 class _TooLarge(Exception):

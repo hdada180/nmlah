@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0A0C11">
+<meta name="referrer" content="no-referrer">
+<title>Nemla Fleet</title>
+<link rel="icon" href="brand/nemla-icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="fleet.css">
+</head>
+<body>
+<div class="backdrop"></div>
+
+<header class="top">
+  <a class="brand" href="./" aria-label="Nemla Fleet">
+    <img class="brand-logo" src="brand/nemla-logo.svg" alt="Nemla">
+    <span class="brand-page" data-i18n="title">Fleet</span>
+  </a>
+  <div class="chips" id="chips" aria-live="polite"></div>
+  <div class="top-actions">
+    <span class="live" id="live" role="status" data-state="idle"><i></i><span id="liveText" data-i18n="live.wait">Connecting</span></span>
+    <button class="btn ghost" id="btnLang" type="button" aria-label="Language">العربية</button>
+  </div>
+</header>
+
+<main>
+  <p class="lede" data-i18n="lede">Networks you are authorized to scan, watched from one place. Each agent keeps its own scope; the controller can never widen it.</p>
+
+  <section class="stats" id="stats" aria-label="Summary"></section>
+
+  <section class="card" aria-labelledby="hAgents">
+    <div class="card-head">
+      <h2 id="hAgents" data-i18n="agents.title">Agents</h2>
+      <button class="btn primary" id="btnAdd" type="button" data-i18n="agents.add">Add agent</button>
+    </div>
+    <div class="table-wrap"><table id="agentsTable"><thead><tr id="agentsHead"></tr></thead><tbody id="agentsBody"></tbody></table></div>
+    <p class="empty" id="agentsEmpty" hidden data-i18n="agents.none">No agents yet. Add one to get started.</p>
+  </section>
+
+  <section class="card" aria-labelledby="hJobs">
+    <div class="card-head"><h2 id="hJobs" data-i18n="jobs.title">Jobs</h2></div>
+    <div class="table-wrap"><table id="jobsTable"><thead><tr id="jobsHead"></tr></thead><tbody id="jobsBody"></tbody></table></div>
+    <p class="empty" id="jobsEmpty" hidden data-i18n="jobs.none">No jobs yet.</p>
+  </section>
+
+  <section class="card" aria-labelledby="hAudit">
+    <div class="card-head">
+      <h2 id="hAudit" data-i18n="audit.title">Audit trail</h2>
+      <span class="note" data-i18n="audit.note">Append-only. Secrets are never written to it.</span>
+    </div>
+    <ol class="audit" id="auditList"></ol>
+    <p class="empty" id="auditEmpty" hidden data-i18n="audit.none">Nothing recorded yet.</p>
+  </section>
+</main>
+
+<div class="lost" id="lost" hidden role="alert">
+  <div class="lost-box">
+    <h2 id="lostTitle"></h2>
+    <p id="lostBody"></p>
+  </div>
+</div>
+
+<dialog id="dlgAdd" aria-labelledby="addTitle">
+  <form method="dialog" id="formAdd" novalidate>
+    <h2 id="addTitle" data-i18n="add.title">Add an agent</h2>
+    <p class="hint" data-i18n="add.intro">Enrollment happens on the agent's own machine. This makes a one-time token; nothing is installed remotely.</p>
+    <label class="field"><span data-i18n="add.name">Agent name</span>
+      <input id="addName" name="name" autocomplete="off" spellcheck="false" maxlength="40" placeholder="acme-hq" dir="ltr">
+    </label>
+    <label class="field"><span data-i18n="add.scope">Scope this agent will be allowed to scan</span>
+      <input id="addScope" name="scope" autocomplete="off" spellcheck="false" placeholder="10.20.0.0/16" dir="ltr">
+    </label>
+    <p class="hint" data-i18n="add.scopehint">Set on the agent, not here. Used only to fill in the command below.</p>
+    <p class="error" id="addError" hidden></p>
+    <div id="addResult" hidden>
+      <p class="hint" data-i18n="add.run">Run this on the machine that will do the scanning. The token works once and expires in 15 minutes.</p>
+      <pre class="cmd" id="addCmd" dir="ltr"></pre>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="addClose" type="button" data-i18n="close">Close</button>
+      <button class="btn ghost" id="addCopy" type="button" hidden data-i18n="add.copy">Copy command</button>
+      <button class="btn primary" id="addMake" type="submit" data-i18n="add.make">Create token</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlgScan" aria-labelledby="scanTitle">
+  <form method="dialog" id="formScan" novalidate>
+    <h2 id="scanTitle"></h2>
+    <p class="hint" id="scanScope"></p>
+    <label class="field"><span data-i18n="scan.target">Target</span>
+      <input id="scanTarget" name="target" autocomplete="off" spellcheck="false" placeholder="10.20.1.0/24" dir="ltr">
+    </label>
+    <label class="field"><span data-i18n="scan.ports">TCP ports</span>
+      <input id="scanPorts" name="ports" autocomplete="off" spellcheck="false" value="1-1024" dir="ltr">
+    </label>
+    <div class="checks">
+      <label><input type="checkbox" id="scanNoOs"> <span data-i18n="scan.noos">Skip OS fingerprinting</span></label>
+      <label><input type="checkbox" id="scanNoPing"> <span data-i18n="scan.noping">Treat every address as up</span></label>
+    </div>
+    <p class="hint" data-i18n="scan.hint">Addresses, CIDR blocks or ranges only. The agent checks this against its own scope and limits again before it scans.</p>
+    <p class="error" id="scanError" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" id="scanClose" type="button" data-i18n="cancel">Cancel</button>
+      <button class="btn primary" id="scanGo" type="submit" data-i18n="scan.go">Queue scan</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlgResult" aria-labelledby="resTitle">
+  <div class="dialog-body">
+    <h2 id="resTitle"></h2>
+    <p class="hint" id="resMeta"></p>
+    <div class="chips" id="resChanges"></div>
+    <div class="table-wrap"><table><thead><tr id="resHead"></tr></thead><tbody id="resBody"></tbody></table></div>
+    <p class="empty" id="resEmpty" hidden data-i18n="res.none">No hosts answered.</p>
+    <div class="actions"><button class="btn ghost" id="resClose" type="button" data-i18n="close">Close</button></div>
+  </div>
+</dialog>
+
+<script src="fleet.js"></script>
+</body>
+</html>
