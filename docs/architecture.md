@@ -38,6 +38,8 @@ Nemla 2 is a package (`nemla/`) with one module per job, plus the local web inte
 | `reports/` | `html.py`, `data.py` (JSON, CSV), `markdown.py`, `sarif.py`, `common.py` (escaping) |
 | `history.py`, `diff.py` | Saved scans (UUID ids, atomic private files) and comparison |
 | `guard.py` | Decoy ports, unknown devices, ARP changes with confidence and evidence |
+| `fleet/` | Fleet mode ([fleet.md](fleet.md)): `protocol.py` (job and result schemas, size caps, pins), `scope.py`, `registry.py` (agents and one-time tokens, hashed), `audit.py` (append-only, fails closed), `controller.py` (the rules, no sockets), `agent.py` (enroll, poll, re-check, `run_scan`, report), `cli.py` (`nemla controller ...`, `nemla agent ...`) |
+| `nemla_ui/fleet_server.py`, `web/fleet.*` | The controller's two listeners (agents over TLS, the operator on loopback) and the Fleet page |
 | `i18n.py`, `_strings_base.py`, `strings_extra.py` | English, Arabic and Hebrew texts, the language of the current thread |
 | `log.py` | Console output, debug logging, `Diagnostics` (non-fatal problems that end up in the report) |
 | `cli.py`, `main.py`, `__main__.py` | Argument parsing and commands (`--diff`, `--watch`, `--guard`, ...) |
@@ -148,3 +150,4 @@ These hold everywhere and are tested (`tests/test_scheduler_and_net.py`, `test_g
 5. Files that others may read later (history, reports, guard state) are written to a temporary file and renamed into place.
 6. Anything user-supplied that sizes a loop (ports, targets, threads, rates, JSON depth) is bounded before it is used.
 7. The local server trusts nothing: token, `Host`, `Origin`, `Sec-Fetch-Site`, body size, connection and stream ceilings, and a CSP.
+8. Fleet mode (`tests/test_fleet_*.py`): the agent's scope is its own and is re-checked on resolved addresses; a job is data that reaches only `run_scan`; nothing in `nemla/fleet/` or `nemla_ui/fleet_server.py` starts a process or executes text (a test scans the source); the pin is verified before anything is sent; the audit trail refuses the action when it cannot be written; one agent is one process and one job at a time, because the log sink and Scapy's configuration are process-wide.

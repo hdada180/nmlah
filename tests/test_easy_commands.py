@@ -10,6 +10,7 @@ import pytest
 
 import nemla
 from nemla.cli import build_parser, expand_command_word, scan_inputs
+from nemla.fleet.cli import build_parser as fleet_parser
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -183,11 +184,14 @@ def commands_in(readme: pathlib.Path):
 def test_every_command_in_the_readme_is_one_the_tool_accepts(name):
     """The README is the manual: a command that stops parsing (a renamed flag, a typo in a translation) fails here."""
     seen = 0
-    parser = build_parser()
+    parser, fleet = build_parser(), fleet_parser()
     for number, args in commands_in(ROOT / name):
         seen += 1
         try:
-            parser.parse_args(expand_command_word(args))
+            if args and args[0] in ("controller", "agent"):           # Fleet mode has its own sub-commands
+                fleet.parse_args(args)
+            else:
+                parser.parse_args(expand_command_word(args))
         except SystemExit as exit_:
             if exit_.code not in (0, None):                       # --help and --version leave with 0: that is accepted
                 pytest.fail(f"{name}:{number}: nemla {' '.join(args)} is not accepted by the command line")

@@ -54,6 +54,7 @@ Nemla (Arabic: **نملة**, "ant") is a small network reconnaissance platform w
 | History | UUID scan ids, atomic private files, comparison: new/removed hosts, opened/closed ports (TCP and UDP), service, version and OS changes, new and resolved findings |
 | Guard | Decoy ports, unknown devices, ARP changes with a confidence and the evidence behind it |
 | Interface | 3D colony map, live progress, inspector with confidence and evidence, history, diff, Guard status, English/Arabic/Hebrew |
+| Fleet | One controller and an enrolled agent inside each network you are authorised to scan: scans run where the network is, the agent keeps its own scope, everything is audited and revocable ([Fleet mode](#fleet-mode-several-networks-you-are-authorised-to-scan)) |
 
 ## Install
 
@@ -217,6 +218,27 @@ nemla guard
 nemla guard --guard-log alerts.jsonl       # also append every alert to a file
 ```
 
+## Fleet mode (several networks you are authorised to scan)
+
+If you look after more than one network (your employer's, your clients') you can put a small **agent** inside each and watch them all from one **controller**, on the command line, through a JSON API or on one page in the browser. It is for scanning what you are entitled to scan, and it is built so that it cannot become a remote-control tool:
+
+- **The agent decides its own scope.** It is set on the agent's machine when it is enrolled; the controller can only send jobs inside it, cannot widen it, and the agent checks every job again.
+- **Enrolling is local.** A one-time token, used once, expiring in 15 minutes; nothing registers itself and nothing is installed remotely.
+- **A job is data, not code:** addresses, ports and a short list of scan options. No commands, scripts, files, plugins or updates.
+- **Agents connect out, over TLS, to a pinned certificate**, and refuse a controller whose certificate is not the one recorded at enrollment.
+- **Revocation takes effect at once**, on both sides, and **everything is written to an append-only audit trail** that never holds a secret.
+
+```bash
+nemla controller serve                                    # prints the link to the Fleet page
+nemla controller enroll-token acme-hq
+nemla agent enroll http://127.0.0.1:8443 --token TOKEN --scope 127.0.0.0/24
+nemla agent run
+nemla controller dispatch acme-hq 127.0.0.1 -p 22,80,443
+nemla controller revoke acme-hq
+```
+
+Beyond one machine the controller needs a TLS certificate (one `openssl` command) and the agents pin its fingerprint. The full guide, the limits and the threat model (what an attacker gets if they hold the controller, an agent, or a token) are in [docs/fleet.md](docs/fleet.md).
+
 ## The 3D interface
 
 Run Nemla with no arguments and it opens its own window: a 3D map of your network, a scan form, a live host list, an inspector and a history of saved scans.
@@ -256,6 +278,7 @@ Nemla scans hostile networks and shows what strangers wrote, so it is hardened a
 - **SSRF:** probes never follow redirects or URLs found in banners; a target is only what you typed.
 - **What the local interface reveals:** `/api/info` (host name, local address, whether Nemla runs as root, whether Scapy is present, the packet capabilities) is answered only with the token and after the Host, Origin and Sec-Fetch-Site checks, and only on the loopback interface. Do not forward or proxy that port to a network you do not trust: whoever holds the token can start scans from this machine.
 - **The Guard's decoy ports are the one thing that listens on the LAN**, on purpose: they send a fixed banner, accept no login, cap concurrent clients and read at most a few bytes.
+- **Fleet mode** ([docs/fleet.md](docs/fleet.md)): the agent's scope lives on the agent; jobs are validated data that only ever reach Nemla's own scan function (a test scans the source for anything that could run text or start a process); enrollment tokens and agent secrets are stored only as hashes (a token is looked up by its hash; an agent secret is compared in constant time, and an unknown agent costs the same as a wrong secret); agents verify the controller's pinned certificate before sending anything; the audit trail refuses the action if it cannot be written; the operator page and API listen on `127.0.0.1` only, behind a key, with the same `Host`, `Origin` and CSP checks as the local interface.
 - **Plugins:** detectors are ordinary Python modules inside the `nemla/fingerprint/` package, registered when the package is imported. Nemla loads nothing from a configured path, an entry point or a download, and it offers no sandbox: a module you add runs with the full privileges of the process, exactly like the rest of the code. Only add code you have read.
 
 ## What needs elevated privileges
@@ -351,6 +374,7 @@ Found a security bug rather than a regular one? See [SECURITY.md](SECURITY.md) i
 
 - [x] JSON and CSV output, English / Arabic / Hebrew, findings and `--fail-on`, Guard, history, `--diff` and `--watch`, 3D interface, Linux launcher
 - [x] Architecture split, plugin detectors, IPv6, UDP, OS fingerprinting with confidence, Markdown and SARIF, bounded scheduler
+- [x] Fleet mode: a controller and enrolled agents for several authorised networks (CLI, JSON API, one page)
 - [ ] Full IEEE OUI registry for MAC vendors (today a curated table of about 70 common vendor and platform prefixes, taken from the IEEE list)
 - [ ] Scan profiles and a config file
 - [ ] Interactive HTML report (sorting, filtering)

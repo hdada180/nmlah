@@ -7,6 +7,22 @@ are reconstructed from the git history rather than pinned to a release date.
 ## [Unreleased]
 
 ### Added
+- **Fleet mode**: a controller and enrolled agents for several networks you are authorised to scan, from the command line
+  (`nemla controller ...`, `nemla agent ...`), a JSON API and one page in the browser. See [docs/fleet.md](docs/fleet.md).
+  It is reconnaissance only and built so that it cannot become remote control: the agent's scope is set on the agent and
+  the controller can neither widen it nor skip the agent's own re-check; enrollment is local, with a single-use token that
+  expires after 15 minutes; a job is validated data (literal addresses, ports, a short list of scan options) that only ever
+  reaches Nemla's own scan function, and a test scans the package for anything that could run text or start a process;
+  agents connect out over TLS 1.2+ and verify a pinned certificate fingerprint before sending anything; revocation is
+  immediate on both sides and stops a scan in progress; every action is written to an append-only audit trail that refuses
+  the action if it cannot be written and never holds a secret. Limits: 50 agents, one job at a time per agent, jobs held in
+  the controller's memory. Not included, on purpose: remote commands, file transfer, updates, plugins pushed to agents,
+  Guard control, a controller-managed scope.
+- The Fleet page (`nemla_ui/web/fleet.*`): agents, queueing a scan, two-step revoke, jobs with results and what changed since
+  the previous scan of the same target, and the audit trail. English and Arabic (right-to-left) and a phone layout. The
+  Arabic text is machine-written and has not been reviewed by a native speaker.
+- `TargetSet.contains_all()`, span arithmetic that says whether every address of one target expression lies inside another
+  (IPv4 and IPv6, scoped addresses included); it is what the scope check is built on.
 - CI proves what ships, not only the source tree: a `package` job (`compileall`, `python -m build`, `twine check --strict`,
   and `.github/scripts/check_dist.py`, which compares the wheel and the sdist with the source tree: nothing missing,
   nothing extra, one version) and an `installed` job that installs the wheel alone into a clean virtual environment

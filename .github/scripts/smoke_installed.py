@@ -6,7 +6,8 @@
 It proves what a user gets after `pip install`: the package comes from site-packages (not from the checkout), one
 version everywhere (package metadata, `import nemla`, `nemla --version`, `python -m nemla`, the web API and the
 reports), every module imports on its own, the console script works, a real scan of a loopback port produces every
-report format, and the web page and its assets are served with the security headers and refuse bad requests.
+report format, the web page and its assets are served with the security headers and refuse bad requests, and Fleet
+mode works: its page and API, and an enrolled agent running a real scan and reporting it.
 Standard library only.
 """
 import http.client
@@ -21,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -169,6 +171,80 @@ def main(argv):
     check(get("/..%2f..%2fpyproject.toml")[0] == 404 and get("/%2e%2e/%2e%2e/config.py")[0] == 404, "path traversal is refused")
     httpd.shutdown()
     httpd.server_close()
+
+    # -- Fleet mode from the installed package: the page, the API's key, and a real scan through a real agent ----------
+    from nemla.fleet import agent as fleet_agent
+    from nemla.fleet.controller import FleetError
+    from nemla_ui import fleet_server
+    fleet_root = Path(tempfile.mkdtemp())
+    target = socket.socket()
+    target.bind(("127.0.0.1", 0))
+    target.listen(8)
+    target_port = target.getsockname()[1]
+
+    def answer():
+        while True:
+            try:
+                conn, _ = target.accept()
+            except OSError:
+                return
+            try:
+                conn.sendall(b"SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13\r\n")
+            except OSError:
+                pass
+            conn.close()
+
+    threading.Thread(target=answer, daemon=True).start()
+    running = fleet_server.start_controller(fleet_root / "fleet", "127.0.0.1", 0, 0)
+    stop = threading.Event()
+    try:
+        def fleet_get(path, headers=None):
+            conn = http.client.HTTPConnection("127.0.0.1", running.operator_port, timeout=10)
+            conn.request("GET", path, headers=headers or {})
+            response = conn.getresponse()
+            body = response.read()
+            conn.close()
+            return response.status, response, body
+
+        status, response, body = fleet_get("/")
+        check(status == 200 and b"Nemla Fleet" in body and bool(response.getheader("Content-Security-Policy")),
+              "the Fleet page is served with its CSP")
+        check(all(fleet_get(path)[0] == 200 for path in ("/fleet.js", "/fleet.css", "/brand/nemla-logo.svg")),
+              "the Fleet page's script, style and logo are shipped")
+        check(fleet_get("/app.js")[0] == 404 and fleet_get("/..%2f..%2fpyproject.toml")[0] in (400, 404),
+              "the Fleet listener serves only its own files")
+        check(fleet_get("/api/fleet/agents")[0] == 401, "the Fleet API refuses a request without the key")
+        check(fleet_get("/api/fleet/agents", {"X-Nemla-Token": running.token})[0] == 200, "the Fleet API answers with the key")
+        check(fleet_get("/", {"Host": "evil.example"})[0] == 403, "the Fleet page refuses a wrong Host header")
+
+        token = running.controller.issue_token("smoke", "smoke test")["token"]
+        fleet_agent.enroll(fleet_root / "agent", f"http://127.0.0.1:{running.agent_port}", token, "127.0.0.0/24", "")
+        runner = fleet_agent.Runner(fleet_root / "agent", stop, say=lambda line: None, poll_seconds=2)
+        worker = threading.Thread(target=runner.run, daemon=True)
+        worker.start()
+        try:
+            running.controller.dispatch("smoke", {"target": "10.9.9.9", "ports": "22"}, "smoke test")
+            refused = False
+        except FleetError as err:
+            refused = err.status == 403
+        check(refused, "a job outside the agent's scope is refused by the controller")
+        job = running.controller.dispatch("smoke", {"target": "127.0.0.1", "ports": str(target_port),
+                                                    "options": {"no_os": True, "no_ping": True, "timeout": 1}}, "smoke test")
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline and running.controller.job(job["id"])["state"] not in ("done", "failed"):
+            time.sleep(0.25)
+        final = running.controller.job(job["id"])
+        detail = "" if final["state"] == "done" else f" ({final.get('error')})"
+        check(final["state"] == "done" and (final["summary"] or {}).get("open_ports") == 1,
+              f"an enrolled agent ran a real scan and reported its open port ({final['state']}){detail}")
+        outside = run(command, "agent", "status", "--data-dir", str(fleet_root / "nobody")) if command else \
+            run(sys.executable, "-m", "nemla", "agent", "status", "--data-dir", str(fleet_root / "nobody"))
+        check(outside.returncode == 1 and "not enrolled" in outside.stderr,
+              "`nemla agent status` runs from the installed command")
+    finally:
+        stop.set()
+        running.stop()
+        target.close()
 
     print()
     print(f"{len(failures)} check(s) failed" if failures else "all smoke checks passed")

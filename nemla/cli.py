@@ -131,6 +131,9 @@ examples:
   nemla diff old.json new.json          what changed between two saved scans
   nemla guard                           watch this network for suspicious activity
   nemla ui                              open the 3D interface
+  nemla controller serve                several networks in one place: the Fleet controller (docs/fleet.md)
+  nemla agent enroll URL --token T --scope 10.0.0.0/24
+                                        make this machine an agent that scans only inside that scope
 
 Every option above works with these too, and `-t TARGET` is the same as a plain TARGET.
 
@@ -165,7 +168,8 @@ def expand_command_word(argv: list) -> list:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="nemla",
-        usage="nemla [TARGET] [options]   |   nemla ui | guard | watch TARGET [EVERY] | diff OLD NEW   |   nemla --help",
+        usage="nemla [TARGET] [options]   |   nemla ui | guard | watch TARGET [EVERY] | diff OLD NEW   |   "
+              "nemla controller ... | agent ...   |   nemla --help",
         description="Nemla (نملة) - network reconnaissance, service intelligence and defensive monitoring. "
                     "Run it without arguments to open the 3D interface.",
         epilog=EXAMPLES + "Only scan systems you own or have explicit permission to test.",

@@ -53,6 +53,12 @@ requests**, do something Nemla did not intend. Examples:
   was not escaped
 - history, report or launcher files written with unsafe permissions, or path handling that can escape the intended
   folder
+- **Fleet mode** ([docs/fleet.md](docs/fleet.md)): anything that lets a controller, an agent, a token or the network between them
+  do more than the design allows. For example: a job that runs anything but Nemla's own scan, or reaches an address outside the
+  agent's own scope; enrolling without a valid one-time token; an agent that sends something before it has checked the pinned
+  certificate; a revoked agent that is still served; an action that leaves no audit entry, or an audit entry that holds a secret;
+  the operator page or API answering without the key, or from a page that is not its own; a result that injects markup into the
+  page, or exhausts the controller's memory, connections or disk
 
 Nemla's current defenses along these lines are documented in [README.md → Security](README.md#security); a report
 that finds a hole in one of them, or a place the same discipline was missed, is exactly what this policy is for.
@@ -68,6 +74,11 @@ that finds a hole in one of them, or a place the same discipline was missed, is 
   or who already controls the local network stack Nemla trusts by design (e.g., someone who can already spoof ARP
   on your LAN can naturally confuse ARP-based discovery — that is a property of ARP, not a Nemla bug).
 - Missing hardening flags on the *scanned* services Nemla reports about (that's a finding, see above).
+- Fleet mode behaving as [documented](docs/fleet.md#threat-model-what-an-attacker-gets): someone who already holds the
+  controller's machine can queue scans inside each agent's own scope and read the stored results, and someone who holds an
+  agent's credentials file can pose as that agent until it is revoked. Those are the stated limits of the design, not bugs; a
+  way to go *beyond* them is exactly what is in scope above. Fleet mode will not gain remote command execution, file transfer,
+  self-update or a controller-managed scope, so a request for those is not a vulnerability report.
 
 ## Credit
 
