@@ -515,6 +515,9 @@ def main(argv=None) -> int:
     use_utf8_output()
     parser = build_parser()
     given = sys.argv[1:] if argv is None else list(argv)
+    if given and given[0] in ("controller", "agent"):        # Fleet mode has its own sub-commands
+        from .fleet.cli import main as fleet_main
+        return fleet_main(given)
     bare = not given
     args = parser.parse_args(expand_command_word(given))
     if args.target_arg:
