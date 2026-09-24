@@ -485,3 +485,27 @@ def test_an_agent_that_took_the_name_meanwhile_blocks_a_second_enrollment(tmp_pa
                         "last_seen": None, "revoked": False, "revoked_at": None}
     with pytest.raises(registry.RegistryError, match="already enrolled"):
         reg.enroll(token, "10.20.0.0/16")
+
+
+# --------------------------------------------------------------------------
+# a secret must be typeable: one URL-safe token in sixty-four starts with "-", which a command line reads as an option
+# --------------------------------------------------------------------------
+
+def test_a_secret_never_starts_with_a_dash_even_when_the_first_draws_do(monkeypatch):
+    draws = iter(["-" + "a" * 42, "-" + "b" * 42, "c" * 43])
+    monkeypatch.setattr(protocol.secrets, "token_urlsafe", lambda nbytes: next(draws))
+    assert protocol.new_secret() == "c" * 43
+
+
+def test_secrets_and_tokens_are_long_distinct_and_never_start_with_a_dash():
+    values = [protocol.new_secret() for _ in range(4000)]         # a dash-first draw is 1 in 64: four thousand would hit ~60
+    assert len(set(values)) == len(values)
+    assert not [v for v in values if v.startswith("-")] and all(len(v) >= 43 for v in values)
+
+
+def test_a_registry_token_is_never_dash_first(tmp_path, monkeypatch):
+    real = protocol.secrets.token_urlsafe
+    draws = iter(["-" + "x" * 42])
+    monkeypatch.setattr(protocol.secrets, "token_urlsafe", lambda nbytes: next(draws, None) or real(nbytes))
+    token = registry.Registry(tmp_path / "fleet").issue_token("acme-hq")
+    assert not token.startswith("-") and len(token) >= 43

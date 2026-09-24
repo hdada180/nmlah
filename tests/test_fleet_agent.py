@@ -610,3 +610,16 @@ def test_fleet_subcommands_do_not_touch_the_ordinary_scanner_syntax(capsys):
     assert caught.value.code == 2
     with pytest.raises(SystemExit):
         nemla.main(["controller", "no-such-command"])
+
+
+def test_an_enrollment_token_can_always_be_typed_on_the_command_line(rc, tmp_path, capsys, monkeypatch):
+    """One token in sixty-four used to start with '-': argparse read `--token -abc` as an option and enrolling failed."""
+    real = protocol.secrets.token_urlsafe
+    draws = iter(["-" + "x" * 42, "-" + "y" * 42])                 # the controller's first two draws start with a dash
+    monkeypatch.setattr(protocol.secrets, "token_urlsafe", lambda nbytes: next(draws, None) or real(nbytes))
+    code, out, _ = cli(capsys, "controller", "enroll-token", "dash", "--json", "--data-dir", str(tmp_path))
+    token = json.loads(out)["token"]
+    assert code == 0 and not token.startswith("-")
+    code, out, _ = cli(capsys, "agent", "enroll", f"http://127.0.0.1:{rc.agent_port}", "--token", token, "--scope", "127.0.0.0/24",
+                       "--data-dir", str(tmp_path))
+    assert code == 0 and "Enrolled as dash" in out

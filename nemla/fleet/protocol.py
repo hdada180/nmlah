@@ -187,8 +187,14 @@ def new_id() -> str:
 
 
 def new_secret() -> str:
-    """256 random bits: an agent's secret, or an enrollment token."""
-    return secrets.token_urlsafe(32)
+    """256 random bits: an agent's secret, or an enrollment token.
+
+    Never starts with "-": the URL-safe alphabet has one, and a token that does would be read as an option by
+    `nemla agent enroll --token TOKEN` (about one token in sixty-four). Drawing again costs nothing and keeps 256 bits."""
+    while True:
+        secret = secrets.token_urlsafe(32)
+        if not secret.startswith("-"):
+            return secret
 
 
 def hash_secret(secret: str) -> str:
