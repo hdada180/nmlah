@@ -447,3 +447,41 @@ def test_the_fleet_package_never_starts_a_process_or_executes_text():
         source = path.read_text(encoding="utf-8")
         for pattern in BANNED:
             assert not re.search(pattern, source), f"{path.name} matches {pattern}"
+
+# --------------------------------------------------------------------------
+# more of the same: every literal form, and the pin helper's refusals
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("target", ["10.0.0.5-10.0.0.9", "10.0.0.5-9", "2001:db8::1-2001:db8::9", "10.0.0.0/28,10.0.1.5",
+                                    "[2001:db8::5]", "fe80::1%eth0", "10.0.0.5,   10.0.0.6", "::1"])
+def test_ranges_blocks_and_scoped_addresses_are_accepted_as_literals(target):
+    assert protocol.validate_job({"target": target, "ports": "22"})["target"] == target.strip()
+
+
+@pytest.mark.parametrize("target", ["10.0.0.0/33", "10.0.0.5-", "2001:db8::1-notanaddress", "10.0.0.5-999", "1.2.3.4/x",
+                                    "10.0.0.9-10.0.0.5", "-", "10.0.0.5-10.0.0.6-10.0.0.7"])
+def test_broken_literals_are_refused(target):
+    with pytest.raises(protocol.JobError):
+        protocol.validate_job({"target": target, "ports": "22"})
+
+
+def test_the_pin_of_a_pem_file_needs_a_real_certificate():
+    for bad in ("", "no certificate here", "-----BEGIN CERTIFICATE-----\n!!!!\n-----END CERTIFICATE-----"):
+        with pytest.raises(protocol.ProtocolError):
+            protocol.pin_from_pem(bad)
+
+
+def test_a_registry_file_that_cannot_be_read_is_an_error_not_an_empty_registry(tmp_path):
+    folder = tmp_path / "fleet"
+    (folder / "agents.json").mkdir(parents=True)                # a folder where the file should be
+    with pytest.raises(registry.RegistryError, match="cannot read"):
+        registry.Registry(folder)
+
+
+def test_an_agent_that_took_the_name_meanwhile_blocks_a_second_enrollment(tmp_path):
+    reg = registry.Registry(tmp_path / "fleet")
+    token = reg.issue_token("acme-hq")
+    reg._agents["x"] = {"id": "x", "name": "acme-hq", "secret_hash": "", "scope": "", "scope_addresses": 0, "created": 1.0,
+                        "last_seen": None, "revoked": False, "revoked_at": None}
+    with pytest.raises(registry.RegistryError, match="already enrolled"):
+        reg.enroll(token, "10.20.0.0/16")

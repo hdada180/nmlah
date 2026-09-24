@@ -14,8 +14,10 @@ import ipaddress
 import json
 import re
 import secrets
+import ssl
 
 from ..config import OptionError, ScanOptions
+from ..fingerprint.x509 import X509Error, parse_certificate
 from ..net import parse_ip
 from ..targets import _IPV4_RANGE, iter_targets, parse_ports
 
@@ -201,6 +203,19 @@ def secret_matches(secret: str, stored_hash: str) -> bool:
 def pin_of(der_certificate: bytes) -> str:
     """The pin of a certificate: its SHA-256 fingerprint, `sha256:` plus lowercase hex."""
     return "sha256:" + hashlib.sha256(der_certificate).hexdigest()
+
+
+def pin_from_pem(pem_text: str) -> str:
+    """The pin of the first certificate in a PEM file's text (what a controller prints for its operators)."""
+    match = re.search(r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----", pem_text, re.S)
+    if not match:
+        raise ProtocolError("no certificate found in that file")
+    try:
+        der = ssl.PEM_cert_to_DER_cert(match.group(0))
+        parse_certificate(der)              # base64 decoding drops stray characters; a real certificate must also parse
+    except (ValueError, X509Error):
+        raise ProtocolError("that certificate is not valid PEM") from None
+    return pin_of(der)
 
 
 def normalize_pin(text: str) -> str:
